@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>{{ jc.number }}</title>
+<style>
+  /* Mirrors the Construction Jobcard sheet: page 1 details and completion, page 2 tasks. */
+  @page { size: A4 portrait; margin: 10mm; }
+  * { box-sizing: border-box; border-radius: 0; }
+  body { font: 12px/1.25 Calibri, Carlito, Arial, sans-serif; color: #000; margin: 0; background: #fff; }
+  table { width: 100%; border-collapse: collapse; table-layout: fixed; margin: 0 0 8px; border: 1px solid #000; }
+  td { border: 1px solid #000; padding: 2px 4px; height: 19px; vertical-align: middle; overflow-wrap: anywhere; }
+  .blue { background: #dce6f1; } .c { text-align: center; } .b { font-weight: bold; } .r { text-align: right; }
+  .hd { font-weight: bold; text-align: center; border-left: 0; border-right: 0; }
+  .logo { height: 56px; text-align: center; padding: 2px; } .logo img { max-height: 52px; max-width: 100%; }
+  .title { font-size: 15px; font-weight: bold; text-align: center; }
+  .tall td { height: 36px; } .info { height: 76px !important; vertical-align: top; }
+  .chk { text-align: center; font-family: "Segoe UI Symbol", Arial, sans-serif; }
+  .small { font-size: 10.5px; }
+  .bar { padding: 10px 14px; background: #111; color: #fff; display: flex; gap: 12px; align-items: center; font-family: Arial, sans-serif; }
+  .bar button { font: inherit; font-weight: bold; padding: 6px 16px; border: 2px solid #111; background: #ff6b00; cursor: pointer; border-radius: 0; }
+  @media print { .bar { display: none; } body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
+</style></head><body>
+<div class="bar"><button onclick="window.print()">Print</button><span>Two A4 pages, laid out like the Excel jobcard. Print to PDF to save a copy.</span></div>
+
+{% macro head() %}
+<table>
+  <colgroup><col style="width:8.8%"><col style="width:8.8%"><col style="width:7.9%"><col style="width:8.8%"><col style="width:14%"><col style="width:11.2%"><col style="width:7.1%"><col style="width:8.8%"><col style="width:8.1%"><col style="width:8.6%"><col style="width:7.8%"></colgroup>
+  <tr><td colspan="3" class="logo"><img src="{{ url_for('jobcards.static', filename='img/nmc-logo.png') }}" alt="NMC Energy"></td>
+      <td colspan="5" class="title">CONSTRUCTION JOBCARD</td>
+      <td colspan="3" class="logo"></td></tr>
+</table>
+<table style="margin-top:-9px;border-top:0">
+  <colgroup><col style="width:8.8%"><col style="width:8.8%"><col style="width:7.9%"><col style="width:8.8%"><col style="width:14%"><col style="width:11.2%"><col style="width:7.1%"><col style="width:8.8%"><col style="width:8.1%"><col style="width:8.6%"><col style="width:7.8%"></colgroup>
+  <tr><td colspan="2" class="b">JOBCARD NUMBER:</td><td colspan="3" class="c">{{ jc.number }}</td><td class="b">REVISION:</td>
+      <td colspan="2" class="c b blue">{{ jc.revision }}</td><td class="b">FCP No.</td><td colspan="2" class="c">{{ wp.fcp_no }}</td></tr>
+  <tr><td colspan="2" class="b">JOBCARD TITLE:</td><td colspan="9" class="c blue">{{ jc.title }}</td></tr>
+  <tr><td colspan="3" class="b" style="border-bottom:0">WORKPACK NUMBER:</td><td colspan="8" class="b" style="border-bottom:0">TITLE:</td></tr>
+  <tr class="tall"><td colspan="3" class="small" style="border-top:0">{{ wp.number }}</td><td colspan="8" style="border-top:0">{{ wp.title }}</td></tr>
+  <tr><td colspan="3" class="b" style="border-bottom:0">ASSET:</td><td colspan="3" class="b" style="border-bottom:0">ANS SH1 NUMBER:</td><td colspan="5" class="b" style="border-bottom:0">LEAD TRADE:</td></tr>
+  <tr><td colspan="3" class="c" style="border-top:0">{{ jc.asset }}</td><td colspan="3" class="c" style="border-top:0">{{ jc.ans_sh1_no }}</td><td colspan="5" class="c blue" style="border-top:0">{{ jc.trade }}</td></tr>
+</table>
+{% endmacro %}
+
+<section>
+{{ head() }}
+<table>
+  <colgroup><col style="width:8.8%"><col style="width:8.8%"><col style="width:7.9%"><col style="width:8.8%"><col style="width:14%"><col style="width:11.2%"><col style="width:7.1%"><col style="width:8.8%"><col style="width:8.1%"><col style="width:8.6%"><col style="width:7.8%"></colgroup>
+  <tr><td colspan="11" class="hd">CREATED BY</td></tr>
+  <tr><td>Name</td><td colspan="4" class="c blue">{{ jc.created_by_name }}</td><td colspan="2">Position</td><td colspan="4" class="c blue">{{ jc.created_by_position }}</td></tr>
+  <tr><td>Signature</td><td colspan="4" class="c blue">{{ jc.created_by_signature }}</td><td colspan="2">Date</td><td colspan="4" class="c blue">{{ jc.created_date }}</td></tr>
+</table>
+<table>
+  <colgroup><col style="width:8.8%"><col style="width:8.8%"><col style="width:7.9%"><col style="width:8.8%"><col style="width:14%"><col style="width:11.2%"><col style="width:7.1%"><col style="width:8.8%"><col style="width:8.1%"><col style="width:8.6%"><col style="width:7.8%"></colgroup>
+  <tr><td colspan="11" class="hd">Additional information</td></tr>
+  <tr><td colspan="11" class="blue info" style="white-space:pre-wrap">{{ jc.additional_info }}</td></tr>
+  {% for i in range(7) %}<tr>
+    {% for g in flag_groups %}{% set f = g[1][i] %}
+      {% if loop.index == 1 %}<td colspan="2" class="c">{{ f }}</td><td class="blue chk">{{ '✓' if f in jc.flags }}</td>
+      {% elif loop.index == 2 %}<td colspan="2" class="c">{{ f }}</td><td class="blue chk">{{ '✓' if f in jc.flags }}</td>
+      {% else %}<td colspan="4" class="c">{{ f }}</td><td class="blue chk">{{ '✓' if f in jc.flags }}</td>{% endif %}
+    {% endfor %}</tr>{% endfor %}
+</table>
+<table>
+  <colgroup><col style="width:8.8%"><col style="width:8.8%"><col style="width:7.9%"><col style="width:8.8%"><col style="width:14%"><col style="width:11.2%"><col style="width:7.1%"><col style="width:8.8%"><col style="width:8.1%"><col style="width:8.6%"><col style="width:7.8%"></colgroup>
+  <tr><td colspan="11" class="hd">DRAWING REFERENCE</td></tr>
+  <tr><td colspan="3" class="c">DRAWING NUMBER</td><td colspan="8" class="c">TITLE</td></tr>
+  {% for i in range([3, jc.drawings|length]|max) %}{% set d = jc.drawings[i] if i < jc.drawings|length else None %}
+  <tr class="tall"><td colspan="3" class="c small">{{ d.number if d }}</td><td colspan="8" class="c small blue">{{ d.title if d }}</td></tr>{% endfor %}
+</table>
+<table>
+  <colgroup><col style="width:8.8%"><col style="width:8.8%"><col style="width:7.9%"><col style="width:8.8%"><col style="width:14%"><col style="width:11.2%"><col style="width:7.1%"><col style="width:8.8%"><col style="width:8.1%"><col style="width:8.6%"><col style="width:7.8%"></colgroup>
+  <tr><td colspan="11" class="hd">JOBCARD COMPLETION</td></tr>
+  <tr><td colspan="3" class="hd b" style="border-right:1px solid #000">COMPLETED BY</td><td colspan="3" class="hd b" style="border-right:1px solid #000">SUPERVISOR</td><td colspan="5" class="hd b">APPROVED BY (Client)</td></tr>
+  {% for lab in ['Name', 'Signature', 'Position', 'Date'] %}<tr>
+    <td>{{ lab }}</td><td colspan="2" class="blue"></td><td>{{ lab }}</td><td colspan="2" class="blue"></td><td colspan="2">{{ lab }}</td><td colspan="3" class="blue"></td></tr>{% endfor %}
+</table>
+</section>
+</body></html>
