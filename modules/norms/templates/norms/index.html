@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block title %}Norms{% endblock %}
+{% block head %}<link rel="stylesheet" href="{{ url_for('norms.static', filename='norms.css') }}">{% endblock %}
+{% block content %}
+<h1>Norms library</h1>
+<p class="lede">Find a norm, then copy its key into the NORM KEY column of a jobcard. Words you type must all appear in the item, row or column description.</p>
+<div class="filters">
+  <div><label for="q">Search</label><input id="q" type="search" placeholder="e.g. weld 6 sch 40, cable gland, scaffold" autocomplete="off" autofocus></div>
+  <div><label for="discipline">Discipline</label>
+    <select id="discipline"><option value="">All disciplines</option>
+      {% for d in disciplines %}<option>{{ d }}</option>{% endfor %}</select></div>
+  <div><label for="item">Item</label><select id="item"><option value="">All items</option></select></div>
+</div>
+<div class="options">
+  <span id="meta" aria-live="polite">Loading…</span>
+  <label><input id="all" type="checkbox"> Also show lines that cannot be used (0 hours or not applicable)</label>
+</div>
+<div class="tablewrap">
+  <table>
+    <thead><tr><th class="num">Hours</th><th>Per</th><th>Norm</th><th>Key</th><th></th></tr></thead>
+    <tbody id="rows"></tbody>
+  </table>
+  <div id="empty" class="empty" hidden>No norms match. Try fewer words, or clear the discipline and item filters.</div>
+</div>
+{% endblock %}
+{% block scripts %}<script src="{{ url_for('norms.static', filename='norms.js') }}"></script>{% endblock %}
