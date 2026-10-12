@@ -13,6 +13,9 @@
   .title { font-size: 15px; font-weight: bold; text-align: center; }
   .tall td { height: 36px; } .info { height: 76px !important; vertical-align: top; }
   .chk { text-align: center; font-family: "Segoe UI Symbol", Arial, sans-serif; }
+  .tasks td { border-style: dashed; border-color: #000; height: 22px; }
+  .tasks td.item { border-style: solid solid dashed solid; }
+  .page2 { page-break-before: always; break-before: page; }
   .small { font-size: 10.5px; }
   .bar { padding: 10px 14px; background: #111; color: #fff; display: flex; gap: 12px; align-items: center; font-family: Arial, sans-serif; }
   .bar button { font: inherit; font-weight: bold; padding: 6px 16px; border: 2px solid #111; background: #ff6b00; cursor: pointer; border-radius: 0; }
@@ -73,4 +76,21 @@
     <td>{{ lab }}</td><td colspan="2" class="blue"></td><td>{{ lab }}</td><td colspan="2" class="blue"></td><td colspan="2">{{ lab }}</td><td colspan="3" class="blue"></td></tr>{% endfor %}
 </table>
 </section>
+
+<section class="page2">
+{{ head() }}
+<table class="tasks">
+  <colgroup><col style="width:7%"><col style="width:55%"><col style="width:9.5%"><col style="width:9.5%"><col style="width:9.5%"><col style="width:9.5%"></colgroup>
+  <tr><td colspan="6" class="hd" style="border-style:solid">TASKS</td></tr>
+  <tr><td class="c" style="border-style:solid">ITEM</td><td class="c" style="border-style:solid">DESCRIPTION</td><td class="c" style="border-style:solid">QTY</td><td class="c" style="border-style:solid">NORM</td><td class="c" style="border-style:solid">FACTOR</td><td class="c" style="border-style:solid">HOURS</td></tr>
+  {% for i in range([10, jc.tasks|length]|max) %}{% set t = jc.tasks[i] if i < jc.tasks|length else None %}
+  <tr><td class="c">{{ i + 1 }}</td>
+    <td class="blue">{{ t.description if t }}{% if t and t.factor != 1 and t.factor_reason %}<div class="small"><i>Factor: {{ t.factor_reason }}</i></div>{% endif %}</td>
+    <td class="blue c">{{ '%g' % t.qty if t and t.qty is not none }}</td><td class="blue c">{{ '%g' % t.norm_hours if t and t.norm_hours is not none }}</td>
+    <td class="blue c">{{ '%g' % t.factor if t and (t.qty is not none or t.norm_hours is not none) }}</td>
+    <td class="blue c">{{ '%g' % t.hours if t and t.hours }}</td></tr>{% endfor %}
+  <tr><td colspan="5" class="r b" style="border-style:solid">TOTAL MANHOURS:</td><td class="c b" style="border-style:solid">{{ '%g' % jc.totals.total if jc.totals.total else '-' }}</td></tr>
+</table>
+</section>
+
 </body></html>
