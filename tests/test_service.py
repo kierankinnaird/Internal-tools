@@ -1,5 +1,6 @@
 from modules.norms.service import NormsService
 
+
 svc = NormsService()
 
 
@@ -56,3 +57,22 @@ def test_title_words_still_find_items_when_no_line_mentions_them():
     both = svc.search("gland triple", discipline="3 E&I", usable_only=False, limit=500).rows
     assert both and all("triple" in (r["row_desc"] + " " + r["col_desc"]).lower() for r in both)
     assert all("GLAND" in r["item"] for r in both)
+
+    
+
+def test_suggest_tokens_drop_filler_and_stem():
+    from modules.norms.service import suggest_tokens
+    assert suggest_tokens("Install the cable glands on junction box") == ["install", "cable", "gland", "junction", "box"]
+    assert suggest_tokens("") == [] and suggest_tokens("the and of") == []
+
+
+def test_suggest_finds_usable_norms_from_free_text():
+    rows = svc.suggest("Cut and bevel 6\" sch 40 pipe for welding").rows
+    assert rows and len(rows) <= 5 and all(r["status"] == "OK" for r in rows)
+    assert svc.suggest("zzzqqq xxyyzz").rows == []
+
+
+def test_suggest_needs_two_matching_words_unless_only_one_given():
+    assert svc.suggest("weld").rows
+    one_real_word = svc.suggest("weld zzzqqq").rows
+    assert one_real_word == []
