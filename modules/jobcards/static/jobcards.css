@@ -59,3 +59,24 @@ h2 { font-size: 17px; margin: 32px 0 10px; padding-bottom: 6px; border-bottom: 2
 .flags legend { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; padding: 0 6px; }
 .flags label { display: flex; gap: 8px; align-items: center; text-transform: none; font-weight: 400; font-size: 14px; letter-spacing: 0; margin: 3px 0; }
 .flags input { width: auto; }
+
+
+
+/* Buttons: small variant */
+.btn.small { padding: 3px 10px; font-size: 13px; }
+.inline { display: inline; }
+
+/* Editor: task table */
+.tasks td { padding: 6px; }
+.tasks .sub td { border-bottom: 1px solid var(--line); padding-top: 0; }
+.tasks tr.main td { border-bottom: 0; }
+.tasks input.n { text-align: right; }
+.hours { font-weight: 700; font-size: 16px; padding-top: 12px !important; }
+.sub .lab { font-size: 12px; color: var(--muted); }
+.stampline { font-size: 12px; color: var(--muted); }
+
+/* Editor: sticky save bar */
+.savebar { position: sticky; bottom: 0; background: #fff; border-top: 3px solid var(--ink); padding: 10px 0; display: flex; gap: 14px; align-items: center; margin-top: 24px; }
+.savebar .spacer { flex: 1; }
+.totals { font-variant-numeric: tabular-nums; }
+.totals b { font-size: 18px; }
