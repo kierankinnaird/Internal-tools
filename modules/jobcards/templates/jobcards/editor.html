@@ -68,3 +68,6 @@
 
 </div>
 {% endblock %}
+
+{% block scripts %}<script id="jc-data" type="application/json">{{ {'jc': jc, 'urls': {'save': url_for('jobcards.save', jc_id=jc.id), 'search': url_for('jobcards.norm_search'), 'suggest': url_for('jobcards.norm_suggest'), 'disciplines': url_for('jobcards.norm_disciplines')}, 'hasNorms': has_norms, 'canEdit': can_edit, 'canFactor': can_factor, 'today': ''} | tojson }}</script>
+<script src="{{ url_for('jobcards.static', filename='jobcards.js') }}"></script>{% endblock %}
