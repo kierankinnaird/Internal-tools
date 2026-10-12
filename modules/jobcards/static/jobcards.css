@@ -32,3 +32,22 @@
 /* Collapsible "new" panels */
 details.new { border: 1px solid var(--ink); padding: 14px 16px; margin: 18px 0; }
 details.new > summary { cursor: pointer; font-weight: 700; }
+
+
+/* Buttons: extra variants */
+.btn.dark { background: var(--ink); color: #fff; }
+.btn.dark:hover { background: #333; }
+.btn.danger:hover { background: #fde8e8; }
+
+/* Headings and breadcrumbs */
+h2 { font-size: 17px; margin: 32px 0 10px; padding-bottom: 6px; border-bottom: 2px solid var(--ink); }
+.crumbs { font-size: 13px; margin-bottom: 14px; }
+.crumbs a { color: var(--ink); }
+
+/* Table total row */
+.jc tr.total td { font-weight: 700; border-top: 2px solid var(--ink); border-bottom: 0; }
+
+/* Tags and notes */
+.tag { display: inline-block; padding: 1px 7px; font-size: 11.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; border: 1px solid var(--ink); }
+.tag.warn { background: var(--accent); border-color: var(--ink); }
+.note { color: var(--muted); font-size: 13px; }
