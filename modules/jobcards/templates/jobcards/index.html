@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% block title %}Jobcards{% endblock %}
+{% block head %}<link rel="stylesheet" href="{{ url_for('jobcards.static', filename='jobcards.css') }}">{% endblock %}
+{% block content %}
+<div class="jc">
+<h1>Jobcards</h1>
+<p class="lede">Each workpack holds its jobcards. Hours on a line are quantity × norm × factor, and the workpack page adds them up by trade for the CTR.</p>
+{% if error %}<div class="error" role="alert">{{ error }}</div>{% endif %}
+<details class="new" {% if not workpacks %}open{% endif %}>
+  <summary>New workpack</summary>
+  <form method="post" action="{{ url_for('jobcards.create_workpack') }}">
+    <div class="row">
+      <div><label for="number">Workpack number</label><input id="number" name="number" required></div>
+      <div><label for="jobcard_prefix">Jobcard prefix</label><input id="jobcard_prefix" name="jobcard_prefix" placeholder="defaults to number + “-”"></div>
+      <div style="flex:2 1 280px"><label for="title">Title</label><input id="title" name="title"></div>
+    </div>
+    <div class="row">
+      <div><label for="asset">Asset</label><input id="asset" name="asset"></div>
+      <div><label for="location">Location</label><input id="location" name="location"></div>
+      <div><label for="discipline">Discipline</label><input id="discipline" name="discipline"></div>
+      <div><label for="ces">CES doc no.</label><input id="ces" name="ces_doc_no"></div>
+      <div><label for="fcp">FCP No.</label><input id="fcp" name="fcp_no"></div>
+    </div>
+    <button class="btn primary" type="submit">Create workpack</button>
+  </form>
+</details>
+{% if workpacks %}
+<table>
+  <thead><tr><th>Workpack</th><th>Title</th><th>Asset</th><th class="num">Jobcards</th><th>Created</th></tr></thead>
+  <tbody>{% for w in workpacks %}
+    <tr><td><a href="{{ url_for('jobcards.workpack', wp_id=w.id) }}"><b>{{ w.number }}</b></a></td><td>{{ w.title }}</td>
+        <td>{{ w.asset }}</td><td class="num">{{ w.jobcards }}</td><td>{{ w.created_at[:10] }} · {{ w.created_by }}</td></tr>
+  {% endfor %}</tbody>
+</table>
+{% else %}<div class="empty">No workpacks yet. Create the first one above.</div>{% endif %}
+</div>
+{% endblock %}
