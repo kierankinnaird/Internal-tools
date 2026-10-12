@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block title %}{{ jc.number }}{% endblock %}
+{% block head %}<link rel="stylesheet" href="{{ url_for('jobcards.static', filename='jobcards.css') }}">{% endblock %}
+{% block content %}
+<div class="jc">
+<div class="crumbs"><a href="{{ url_for('jobcards.index') }}">Jobcards</a> / <a href="{{ url_for('jobcards.workpack', wp_id=wp.id) }}">{{ wp.number }}</a> / {{ jc.number }}</div>
+<h1>Jobcard {{ jc.number }}</h1>
+<p class="lede">Hours on each line are quantity × norm × factor. Pick a norm from the library{% if not has_norms %} (not installed here, so type norms in by hand and say where they came from){% endif %}, or type one in and give its basis.</p>
+
+<div class="row">
+  <div style="flex:3 1 320px"><label for="title">Title</label><input id="title" data-f="title"></div>
+  <div><label for="trade">Trade</label><select id="trade" data-f="trade"><option value="">(none)</option>{% for t in trades %}<option>{{ t }}</option>{% endfor %}</select></div>
+  <div style="flex:0 1 90px"><label for="revision">Revision</label><input id="revision" data-f="revision"></div>
+</div>
+<div class="row">
+  <div><label for="asset">Asset</label><input id="asset" data-f="asset"></div>
+  <div><label for="ans">ANS SH1 number</label><input id="ans" data-f="ans_sh1_no"></div>
+  <div><label for="location">Location</label><input id="location" data-f="location"></div>
+  <div><label for="cbn">Created by</label><input id="cbn" data-f="created_by_name"></div>
+  <div><label for="cbp">Position</label><input id="cbp" data-f="created_by_position"></div>
+  <div style="flex:0 1 110px"><label for="cbs">Signature</label><input id="cbs" data-f="created_by_signature"></div>
+  <div><label for="cbd">Date</label><input id="cbd" type="date" data-f="created_date"></div>
+</div>
+
+<h2>Safety, permits and requirements</h2>
+<div class="flags">{% for group, flags in flag_groups %}
+  <fieldset><legend>{{ group }}</legend>{% for f in flags %}<label><input type="checkbox" data-flag="{{ f }}"> {{ f }}</label>{% endfor %}</fieldset>
+{% endfor %}</div>
+
+<h2>Drawings</h2>
+<table><thead><tr><th style="width:30%">Number</th><th>Title</th><th style="width:60px"></th></tr></thead><tbody id="drawings"></tbody></table>
+<p><button class="btn small" type="button" id="add-drawing">Add drawing</button></p>
+
+</div>
+{% endblock %}
