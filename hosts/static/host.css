@@ -1,0 +1,23 @@
+:root {
+  --bg: #ffffff; --ink: #111111; --muted: #5a5a5a; --line: #d6d6d6; --hover: #f4f4f4;
+  --accent: #ff6b00;          /* orange: fills and rules, always with near-black text on top */
+  --accent-text: #b84a00;     /* darker orange for orange-coloured text on white */
+  --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+* { box-sizing: border-box; border-radius: 0; }
+html, body { background: var(--bg); }
+body { margin: 0; color: var(--ink); font: 15px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+.top { display: flex; align-items: stretch; gap: 28px; padding: 0 24px; background: var(--ink); color: #fff; }
+.brand { display: flex; align-items: center; gap: 10px; font-weight: 700; letter-spacing: .02em; padding: 14px 0; }
+.edition { padding: 2px 8px; background: var(--accent); color: var(--ink); font-size: 11.5px; font-weight: 700;
+           text-transform: uppercase; letter-spacing: .06em; }
+.top nav { display: flex; gap: 4px; flex: 1; }
+.top nav a { display: flex; align-items: center; padding: 0 14px; color: #bdbdbd; text-decoration: none;
+             border-bottom: 3px solid transparent; }
+.top nav a:hover { color: #fff; }
+.top nav a[aria-current="page"] { color: #fff; border-bottom-color: var(--accent); }
+.who { display: flex; align-items: center; color: #bdbdbd; font-size: 13px; }
+main { max-width: 1180px; margin: 0 auto; padding: 28px 24px; }
+h1 { font-size: 24px; margin: 0 0 4px; letter-spacing: -.01em; }
+h1::after { content: ""; display: block; width: 44px; height: 4px; margin-top: 8px; background: var(--accent); }
+.lede { margin: 14px 0 22px; color: var(--muted); max-width: 70ch; }

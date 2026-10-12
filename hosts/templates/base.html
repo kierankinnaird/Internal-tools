@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{% block title %}{% endblock %} NMC Tools</title>
+    <link rel="icon" href="data:,">
+    <link rel="stylesheet" href="{{ url_for('static', filename='host.css' )}}">
+    {% block head %}{% endblock %}
+</head>
+<body>
+    <header class="top">
+        <div class="brand">NMC Tools<span class="edition">{{ edition }}</span></div>
+        <nav>{% for n in nav %}<a href="{{ url_for(n.endpoint) }}"{% if request.endpoint == n.endpoint %} aria-current="page"{% endif %}>{{ n.label }}</a>{% endfor %}</nav>
+        <div class="who">Working as {{ user }}</div>
+    </header>
+    <main>{% block content %}{% endblock %}</main>
+    {% block scripts %}{% endblock %}
+</body>
+</html>
