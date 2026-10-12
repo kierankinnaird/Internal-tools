@@ -54,5 +54,17 @@
   {% endif %}
 </div>
 
+<dialog id="norm-dialog" aria-labelledby="nd-title">
+  <div class="head"><b id="nd-title">Find a norm</b><button class="btn small" type="button" id="nd-close">Close</button></div>
+  <div class="body">
+    <div class="row">
+      <div style="flex:2 1 260px"><label for="nd-q">Search</label><input id="nd-q" type="search" placeholder="e.g. weld 6 sch 40, cable gland" autocomplete="off"></div>
+      <div><label for="nd-d">Discipline</label><select id="nd-d"><option value="">All</option></select></div>
+    </div>
+    <div class="note" id="nd-meta"></div>
+    <table class="pick"><thead><tr><th class="num">Hours</th><th>Per</th><th>Norm</th></tr></thead><tbody id="nd-rows"></tbody></table>
+  </div>
+</dialog>
+
 </div>
 {% endblock %}

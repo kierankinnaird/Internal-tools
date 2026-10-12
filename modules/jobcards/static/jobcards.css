@@ -80,3 +80,19 @@ h2 { font-size: 17px; margin: 32px 0 10px; padding-bottom: 6px; border-bottom: 2
 .savebar .spacer { flex: 1; }
 .totals { font-variant-numeric: tabular-nums; }
 .totals b { font-size: 18px; }
+
+
+/* Norm picker dialog */
+dialog { border: 3px solid var(--ink); padding: 0; width: min(900px, 94vw); max-height: 84vh; }
+dialog::backdrop { background: rgba(17,17,17,.55); }
+dialog .head { background: var(--ink); color: #fff; padding: 10px 16px; display: flex; justify-content: space-between; align-items: center; }
+dialog .body { padding: 16px; overflow: auto; max-height: calc(84vh - 50px); }
+.pick td { cursor: pointer; border-bottom: 1px solid var(--line); }
+.pick tr:hover td { background: #fff4ec; }
+
+/* Norm suggestions shown under a task line while typing */
+.sugg { border: 1px solid var(--ink); border-left: 6px solid var(--accent); padding: 6px 8px; margin-bottom: 6px; background: #fff; }
+.sugg-head { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; margin-bottom: 4px; }
+.sugg-item { display: block; width: 100% !important; text-align: left; font: inherit; font-size: 13px; padding: 4px 6px; margin: 0 0 2px; border: 0; border-bottom: 1px solid var(--line); background: #fff; cursor: pointer; }
+.sugg-item:hover, .sugg-item:focus-visible { background: #fff4ec; }
+.sugg .btn { margin-top: 4px; }
