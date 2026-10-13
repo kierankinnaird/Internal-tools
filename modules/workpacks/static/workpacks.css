@@ -95,3 +95,9 @@
 .wp .status.bad { background: var(--accent); border-color: var(--accent); color: #fff; }
 .wp .btn[disabled] { opacity: .6; cursor: wait; }
 @media (max-width: 760px) { .wp .optrow { grid-template-columns: 1fr; } }
+
+
+/* import from excel */
+.wp .importrow { display: grid; grid-template-columns: 1fr auto; gap: 12px; align-items: end; }
+.wp .problems { margin: 8px 0 0; padding-left: 20px; }
+@media (max-width: 760px) { .wp .importrow { grid-template-columns: 1fr; } }

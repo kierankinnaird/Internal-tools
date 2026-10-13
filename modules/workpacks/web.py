@@ -6,7 +6,7 @@ from flask import Blueprint, Response, abort, redirect, render_template, request
 
 from core.context import Context
 
-from . import certfields, rowtables, runs
+from . import certfields, importer, rowtables, runs
 from .fields import CERTIFICATE_FIELDS, ROW_KIND_BY_FORM, WORKPACK_FIELDS
 from .fill import FillService
 from .forms import form_codes
@@ -112,12 +112,16 @@ def create_blueprint(ctx: Context) -> Blueprint:
                 "textarea": column in certfields.TEXTAREAS}
 
     # ---- the list ----------------------------------------------------------------------------
+    def list_page(problems=None, status=200):
+        page = render_template("workpacks/index.html", workpacks=repo.list_workpacks(),
+                               banner=template_banner(store.status()), error=request.args.get("error"),
+                               can_edit=ctx.can("workpacks.edit"), problems=problems or [])
+        return page, status
+
     @bp.get("/")
     def index():
         need("workpacks.view")
-        return render_template("workpacks/index.html", workpacks=repo.list_workpacks(),
-                               banner=template_banner(store.status()), error=request.args.get("error"),
-                               can_edit=ctx.can("workpacks.edit"))
+        return list_page()
 
     @bp.post("/")
     def create():
@@ -127,6 +131,19 @@ def create_blueprint(ctx: Context) -> Blueprint:
         except ValueError as e:
             return redirect(url_for("workpacks.index", error=str(e)))
         return redirect(url_for("workpacks.workpack", wp_id=wp_id))
+
+    @bp.post("/import")
+    def import_excel():
+        need("workpacks.edit")
+        upload = request.files.get("workbook")
+        if upload is None or not upload.filename:
+            return list_page(["Choose a workbook to import"], 400)
+        data = upload.stream.read(importer.MAX_BYTES + 1)
+        try:
+            result = importer.import_workbook(repo, data, upload.filename, ctx.current_user())
+        except importer.ImportProblem as e:
+            return list_page(e.problems, 422)
+        return redirect(url_for("workpacks.workpack", wp_id=result.wp_id, imported=1))
 
     # ---- one workpack ------------------------------------------------------------------------
     @bp.get("/<int:wp_id>")
@@ -141,7 +158,8 @@ def create_blueprint(ctx: Context) -> Blueprint:
             c["rows_text"] = rows_text(c)
         return render_template("workpacks/workpack.html", wp=wp, groups=groups, certs=certs,
                                forms=form_codes(store.folder), error=request.args.get("error"),
-                               can_edit=ctx.can("workpacks.edit"), can_fill=ctx.can("workpacks.fill"))
+                               can_edit=ctx.can("workpacks.edit"), can_fill=ctx.can("workpacks.fill"),
+                               imported=bool(request.args.get("imported")))
 
     @bp.post("/<int:wp_id>")
     def update_workpack(wp_id):

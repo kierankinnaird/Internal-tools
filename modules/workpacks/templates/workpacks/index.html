@@ -12,6 +12,8 @@
 </div>
 
 {% if error %}<div class="banner warn" role="alert"><strong>{{ error }}</strong></div>{% endif %}
+{% if problems %}<div class="banner warn" role="alert"><strong>The workbook was not imported. Nothing has been saved.</strong>
+  <ul class="problems">{% for p in problems %}<li>{{ p }}</li>{% endfor %}</ul></div>{% endif %}
 
 <h2>All workpacks</h2>
 {% if workpacks %}
@@ -42,6 +44,16 @@
   <p class="note">You are taken to the workpack's own page next, where the rest of the details and the certificates are added.</p>
   <button class="btn primary" type="submit">Create workpack</button>
 </form>
+
+<h2>Import from Excel</h2>
+<form method="post" action="{{ url_for('workpacks.import_excel') }}" enctype="multipart/form-data" class="panel importrow" data-busy="Importing...">
+  <div><label for="workbook">Workpack Tools input workbook (.xlsx)</label>
+    <input id="workbook" type="file" name="workbook" accept=".xlsx" required></div>
+  <div class="shrink"><button class="btn primary" type="submit">Import</button></div>
+</form>
+<p class="note">Creates a new workpack from a workbook made for the Workpack Tools: its Project, Certificates, Lines, Joints and Tags sheets.
+  The workbook is checked first and, if anything is wrong, nothing is saved and each problem is listed.</p>
 {% endif %}
 </div>
 {% endblock %}
+{% block scripts %}<script src="{{ url_for('workpacks.static', filename='workpacks.js') }}"></script>{% endblock %}
