@@ -159,3 +159,99 @@ def test_list_counts_the_rows_under_each_certificate(repo, wp):
         db.executemany("INSERT INTO line (certificate_id, pid) VALUES (?, ?)", [(c, "P1"), (c, "P2")])
     got = repo.list_certificates(wp)[0]
     assert (got["line_count"], got["joint_count"], got["tag_count"]) == (2, 0, 0)
+
+
+# ---- table rows --------------------------------------------------------------------------------
+def make(repo, wp, cert_id, form, **extra):
+    return repo.add_certificate(wp, {"cert_id": cert_id, "form": form, **extra}, "k")
+
+
+def test_rows_round_trip_in_order(repo, wp):
+    c = make(repo, wp, "J1", "JI1")
+    saved = repo.replace_rows(c, "joint", [
+        {"joint_no": "J-2", "size": 6, "rating": "300#", "joint_type": "RTJ", "torque": 230.0},
+        {"joint_no": "J-1", "drawing": "D1"},
+    ], "k")
+    assert saved == 2
+    rows = repo.get_rows(c, "joint")
+    assert [r["joint_no"] for r in rows] == ["J-2", "J-1"]
+    assert rows[0] == {"joint_no": "J-2", "drawing": "", "size": "6", "rating": "300#", "joint_type": "RTJ", "torque": "230"}
+
+
+def test_blank_rows_are_dropped_and_saving_replaces_what_was_there(repo, wp):
+    c = make(repo, wp, "E1", "EE12")
+    repo.replace_rows(c, "tag", [{"tag": "T1"}, {"tag": "T2"}, {"tag": " ", "drawing": ""}, {}], "k")
+    assert [r["tag"] for r in repo.get_rows(c, "tag")] == ["T1", "T2"]
+    repo.replace_rows(c, "tag", [{"tag": "T9", "drawing": "D9"}], "k")
+    assert repo.get_rows(c, "tag") == [{"tag": "T9", "drawing": "D9"}]
+    assert repo.replace_rows(c, "tag", [], "k") == 0 and repo.get_rows(c, "tag") == []
+
+
+def test_unknown_keys_in_a_row_are_ignored(repo, wp):
+    c = make(repo, wp, "S1", "SL1")
+    repo.replace_rows(c, "line", [{"pid": "P-1", "line_no": "L1", "bogus": "x"}], "k")
+    assert repo.get_rows(c, "line") == [{"pid": "P-1", "line_no": "L1", "from_equipment": "", "to_equipment": ""}]
+
+
+def test_rows_must_suit_the_form(repo, wp):
+    sl1, as1 = make(repo, wp, "S1", "SL1"), make(repo, wp, "A1", "AS1")
+    with pytest.raises(ValueError, match="takes line rows"):
+        repo.replace_rows(sl1, "joint", [{"joint_no": "J1"}], "k")
+    with pytest.raises(ValueError, match="no table rows"):
+        repo.replace_rows(as1, "line", [{"pid": "P"}], "k")
+    with pytest.raises(ValueError, match="Unknown row kind"):
+        repo.replace_rows(sl1, "nonsense", [], "k")
+    with pytest.raises(ValueError, match="Unknown row kind"):
+        repo.get_rows(sl1, "nonsense")
+    with pytest.raises(ValueError, match="No such certificate"):
+        repo.replace_rows(999, "line", [], "k")
+
+
+def test_mp1_uses_line_rows_like_sl1(repo, wp):
+    c = make(repo, wp, "M1", "MP1")
+    assert repo.replace_rows(c, "line", [{"pid": "ISO-1", "line_no": "L1"}], "k") == 1
+
+
+def test_saving_rows_marks_the_workpack_updated_and_is_audited(repo, wp):
+    c = make(repo, wp, "E1", "EE12")
+    repo.replace_rows(c, "tag", [{"tag": "T1"}], "someone")
+    assert repo.get_workpack(wp)["updated_by"] == "someone"
+    assert repo.events[-1] == ("rows_saved", "EE12 E1: 1 tag rows")
+
+
+def test_list_counts_follow_saved_rows(repo, wp):
+    c = make(repo, wp, "J1", "JI1")
+    repo.replace_rows(c, "joint", [{"joint_no": "1"}, {"joint_no": "2"}, {"joint_no": "3"}], "k")
+    assert repo.list_certificates(wp)[0]["joint_count"] == 3
+
+
+def test_duplicate_copies_fields_and_rows_but_not_the_file_name(repo, wp):
+    src = make(repo, wp, "SL1-A", "SL1", equipment="Skid", system="S", filename="My leak test")
+    repo.replace_rows(src, "line", [{"pid": "P-1", "line_no": "L1"}, {"pid": "P-2", "line_no": "L2"}], "k")
+    new = repo.duplicate_certificate(src, "SL1-B", "kieran")
+    got = repo.get_certificate(new)
+    assert (got["cert_id"], got["form"], got["equipment"], got["system"]) == ("SL1-B", "SL1", "Skid", "S")
+    assert got["filename"] == "" and repo.get_certificate(src)["filename"] == "My leak test"
+    assert repo.get_rows(new, "line") == repo.get_rows(src, "line") and len(repo.get_rows(new, "line")) == 2
+    assert [c["cert_id"] for c in repo.list_certificates(wp)] == ["SL1-A", "SL1-B"]
+    assert repo.events[-1] == ("certificate_duplicated", "SL1 SL1-A -> SL1-B")
+
+
+def test_duplicate_is_independent_of_the_original(repo, wp):
+    src = make(repo, wp, "E1", "EE12")
+    repo.replace_rows(src, "tag", [{"tag": "T1"}], "k")
+    new = repo.duplicate_certificate(src, "E2", "k")
+    repo.replace_rows(new, "tag", [{"tag": "CHANGED"}], "k")
+    assert repo.get_rows(src, "tag") == [{"tag": "T1", "drawing": ""}]
+
+
+def test_duplicate_needs_a_new_unique_id(repo, wp):
+    src = make(repo, wp, "A", "AS1")
+    make(repo, wp, "B", "AS1")
+    with pytest.raises(ValueError, match="already exists"):
+        repo.duplicate_certificate(src, "B", "k")
+    with pytest.raises(ValueError, match="required"):
+        repo.duplicate_certificate(src, "  ", "k")
+    with pytest.raises(ValueError, match="No such certificate"):
+        repo.duplicate_certificate(999, "Z", "k")
+    assert len(repo.list_certificates(wp)) == 2

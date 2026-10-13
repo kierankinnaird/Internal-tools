@@ -56,5 +56,8 @@ ROW_KINDS = {
     "tag": ("tag", [("tag", "Tag"), ("drawing", "Drawing No.")]),
 }
 
+# Which table rows a form takes. Forms not listed here have no table.
+ROW_KIND_BY_FORM = {"SL1": "line", "MP1": "line", "JI1": "joint", "EE12": "tag"}
+
 WORKPACK_COLUMNS = [c for c, _ in WORKPACK_FIELDS]
 CERTIFICATE_COLUMNS = [c for c, _ in CERTIFICATE_FIELDS]
