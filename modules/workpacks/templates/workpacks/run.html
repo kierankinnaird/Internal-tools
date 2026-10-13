@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block title %}Fill result - {{ wp.title }}{% endblock %}
+{% block head %}<link rel="stylesheet" href="{{ url_for('workpacks.static', filename='workpacks.css') }}">{% endblock %}
+{% block content %}
+<div class="wp">
+<div class="crumbs"><a href="{{ url_for('workpacks.index') }}">Workpacks</a> /
+  <a href="{{ url_for('workpacks.workpack', wp_id=wp.id) }}">{{ wp.title }}</a> /
+  <a href="{{ url_for('workpacks.fill_page', wp_id=wp.id) }}">Fill forms</a> / Result</div>
+<h1>Fill result</h1>
+<p class="lede">Run on {{ run.started[:16].replace('T', ' ') }} UTC by {{ run.user }}.
+  {% if run.spare_rows is not none %}Spare rows kept: {{ run.spare_rows }}. {% endif %}{% if run.add_rows %}Rows were added where the template was full.{% endif %}</p>
+
+<div class="banner {{ 'ok' if not run.problems else 'warn' }}" role="status">
+  <strong>{{ run.ok }} of {{ run.forms|length }} form{{ '' if run.forms|length == 1 else 's' }} written{% if run.problems %}, {{ run.problems }} need attention{% endif %}</strong>
+  {% for line in run.notes %}<div class="detail">{{ line }}</div>{% endfor %}
+</div>
+
+<p><a class="btn primary" href="{{ url_for('workpacks.run_download', wp_id=wp.id, run_id=run.run_id) }}">Download all as a zip</a>
+  <a class="btn" href="{{ url_for('workpacks.run_file', wp_id=wp.id, run_id=run.run_id, name='fill-log.csv') }}">fill-log.csv</a>
+  <a class="btn" href="{{ url_for('workpacks.run_file', wp_id=wp.id, run_id=run.run_id, name='fill-audit.csv') }}">fill-audit.csv</a></p>
+
+<table>
+  <thead><tr><th>ID</th><th>Form</th><th>Result</th><th>File</th><th>Notes</th></tr></thead>
+  <tbody>{% for f in run.forms %}
+    <tr><td><b>{{ f.cert_id }}</b></td><td>{{ f.form }}</td>
+      <td><span class="status {{ 'good' if f.status == 'OK' else 'bad' }}">{{ f.status }}</span></td>
+      <td>{% if f.output and f.status == 'OK' %}<a href="{{ url_for('workpacks.run_file', wp_id=wp.id, run_id=run.run_id, name=f.output) }}">{{ f.output }}</a>{% endif %}</td>
+      <td>{{ f.note }}</td></tr>
+  {% endfor %}</tbody>
+</table>
+<p class="note">Check each filled form before it is issued. The zip holds the written forms and both logs; a form that failed the engine's own check is not included.</p>
+
+<form method="post" action="{{ url_for('workpacks.run_delete', wp_id=wp.id, run_id=run.run_id) }}"
+      data-confirm="Delete this run and its forms from the server?">
+  <button class="btn danger" type="submit">Delete this run</button></form>
+</div>
+{% endblock %}
+{% block scripts %}<script src="{{ url_for('workpacks.static', filename='workpacks.js') }}"></script>{% endblock %}

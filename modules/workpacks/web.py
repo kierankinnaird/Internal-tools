@@ -1,13 +1,14 @@
 from __future__ import annotations
 
-from typing import Dict, List
+from typing import Dict, List, Optional
 
-from flask import Blueprint, abort, redirect, render_template, request, url_for
+from flask import Blueprint, Response, abort, redirect, render_template, request, send_from_directory, url_for
 
 from core.context import Context
 
-from . import certfields, rowtables
+from . import certfields, rowtables, runs
 from .fields import CERTIFICATE_FIELDS, ROW_KIND_BY_FORM, WORKPACK_FIELDS
+from .fill import FillService
 from .forms import form_codes
 from .repo import Repo
 from .store import TemplateStatus, TemplateStore, default_folder
@@ -53,6 +54,21 @@ def template_banner(status: TemplateStatus) -> Dict:
             "details": details}
 
 
+def parse_spare(raw: str) -> Optional[int]:
+    """Spare blank rows to keep in a table: blank means leave the template's rows alone."""
+    raw = (raw or "").strip()
+    if not raw:
+        return None
+    if not (raw.isascii() and raw.isdigit()) or int(raw) > 50:
+        raise ValueError("Spare rows must be a whole number from 0 to 50, or left blank")
+    return int(raw)
+
+
+def run_title(meta: Dict) -> str:
+    """'3 ok' or '3 ok, 1 not ok' for a saved run."""
+    return f"{meta['ok']} ok" + (f", {meta['problems']} not ok" if meta["problems"] else "")
+
+
 def rows_text(cert: Dict) -> str:
     """'3 lines', '1 joint', '' for a form that has no table."""
     kind = ROW_KIND_BY_FORM.get(cert["form"])
@@ -67,6 +83,8 @@ def create_blueprint(ctx: Context) -> Blueprint:
                    static_folder="static", static_url_path="/static")
     repo = Repo(ctx.data_dir / "workpacks.sqlite", audit=lambda a, d: ctx.audit("workpacks", a, d))
     store = TemplateStore(default_folder(ctx.data_dir))
+    saved_runs = runs.RunStore(runs.default_folder(ctx.data_dir))
+    filler = FillService(repo, store)
     labels = dict(WORKPACK_FIELDS)
     cert_labels = dict(CERTIFICATE_FIELDS)
 
@@ -123,7 +141,7 @@ def create_blueprint(ctx: Context) -> Blueprint:
             c["rows_text"] = rows_text(c)
         return render_template("workpacks/workpack.html", wp=wp, groups=groups, certs=certs,
                                forms=form_codes(store.folder), error=request.args.get("error"),
-                               can_edit=ctx.can("workpacks.edit"))
+                               can_edit=ctx.can("workpacks.edit"), can_fill=ctx.can("workpacks.fill"))
 
     @bp.post("/<int:wp_id>")
     def update_workpack(wp_id):
@@ -140,6 +158,7 @@ def create_blueprint(ctx: Context) -> Blueprint:
         need("workpacks.edit")
         wp_or_404(wp_id)
         repo.delete_workpack(wp_id)
+        saved_runs.delete_all(wp_id)
         return redirect(url_for("workpacks.index"))
 
     # ---- certificates ------------------------------------------------------------------------
@@ -240,5 +259,96 @@ def create_blueprint(ctx: Context) -> Blueprint:
         cert = cert_or_404(cert_pk)
         repo.delete_certificate(cert_pk, ctx.current_user())
         return back(cert["workpack_id"], anchor="#certificates")
+
+    # ---- filling the forms -----------------------------------------------------------------------
+    def run_or_404(wp_id, run_id):
+        wp_or_404(wp_id)
+        meta = saved_runs.load(wp_id, run_id)
+        if not meta:
+            abort(404)
+        return meta
+
+    @bp.get("/<int:wp_id>/fill")
+    def fill_page(wp_id):
+        need("workpacks.fill")
+        wp = wp_or_404(wp_id)
+        certs = repo.list_certificates(wp_id)
+        for c in certs:
+            c["rows_text"] = rows_text(c)
+        status = store.status()
+        return render_template("workpacks/fill.html", wp=wp, certs=certs, banner=template_banner(status),
+                               ready=status.present, previous=saved_runs.list(wp_id), run_title=run_title,
+                               error=request.args.get("error"))
+
+    @bp.post("/<int:wp_id>/fill")
+    def fill_forms(wp_id):
+        need("workpacks.fill")
+        wp_or_404(wp_id)
+
+        def refused(message):
+            return redirect(url_for("workpacks.fill_page", wp_id=wp_id, error=message))
+        try:
+            picked = [int(v) for v in request.form.getlist("cert")]
+        except ValueError:
+            return refused("Those certificates were not recognised")
+        if not picked:
+            return refused("Tick at least one certificate to fill")
+        try:
+            spare = parse_spare(request.form.get("spare_rows"))
+        except ValueError as e:
+            return refused(str(e))
+        add_rows = bool(request.form.get("add_rows"))
+        try:
+            run_id, out_dir = saved_runs.new(wp_id)
+        except ValueError as e:
+            return refused(str(e))
+        try:
+            report = filler.fill(wp_id, out_dir, cert_pks=picked, spare_rows=spare, add_rows=add_rows)
+        except ValueError as e:
+            saved_runs.delete(wp_id, run_id)
+            return refused(str(e))
+        except Exception:
+            saved_runs.delete(wp_id, run_id)
+            raise
+        saved_runs.save(wp_id, run_id, runs.describe(report, ctx.current_user(), spare, add_rows))
+        return redirect(url_for("workpacks.run_page", wp_id=wp_id, run_id=run_id))
+
+    @bp.get("/<int:wp_id>/runs/<run_id>")
+    def run_page(wp_id, run_id):
+        need("workpacks.fill")
+        meta = run_or_404(wp_id, run_id)
+        return render_template("workpacks/run.html", wp=wp_or_404(wp_id), run=meta, run_title=run_title,
+                               error=request.args.get("error"))
+
+    @bp.get("/<int:wp_id>/runs/<run_id>/download")
+    def run_download(wp_id, run_id):
+        need("workpacks.fill")
+        meta = run_or_404(wp_id, run_id)
+        data = saved_runs.zip_bytes(wp_id, run_id)
+        if data is None:
+            abort(404)
+        repo._audit("workpack_downloaded", f"{meta['title']}: run {run_id}")
+        name = "".join(ch if ch.isascii() and ch.isalnum() else "-" for ch in meta["title"]).strip("-")[:60] or "workpack"
+        return Response(data, mimetype="application/zip",
+                        headers={"Content-Disposition": f'attachment; filename="{name}-{run_id}.zip"'})
+
+    @bp.get("/<int:wp_id>/runs/<run_id>/files/<path:name>")
+    def run_file(wp_id, run_id, name):
+        need("workpacks.fill")
+        run_or_404(wp_id, run_id)
+        folder = saved_runs.path(wp_id, run_id)
+        if name == runs.META or name.endswith(".REJECTED"):
+            abort(404)
+        response = send_from_directory(folder, name, as_attachment=True)     # a missing file is a 404 here
+        repo._audit("workpack_downloaded", f"run {run_id}: {name}")
+        return response
+
+    @bp.post("/<int:wp_id>/runs/<run_id>/delete")
+    def run_delete(wp_id, run_id):
+        need("workpacks.fill")
+        meta = run_or_404(wp_id, run_id)
+        saved_runs.delete(wp_id, run_id)
+        repo._audit("workpack_run_deleted", f"{meta['title']}: run {run_id}")
+        return redirect(url_for("workpacks.fill_page", wp_id=wp_id))
 
     return bp

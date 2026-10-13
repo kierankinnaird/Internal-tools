@@ -9,13 +9,19 @@
 
 {% if error %}<div class="banner warn" role="alert"><strong>{{ error }}</strong></div>{% endif %}
 
+{% if can_fill %}
+<div class="panel tablelink"><div><strong>Fill the forms</strong>
+  <div class="note flat">Writes the Apache forms for this workpack from the details below.</div></div>
+  <a class="btn primary" href="{{ url_for('workpacks.fill_page', wp_id=wp.id) }}">Fill forms</a></div>
+{% endif %}
+
 <h2 id="certificates">Certificates</h2>
 {% if certs %}
 <table>
   <thead><tr><th class="num">#</th><th>ID</th><th>Form</th><th>Equipment</th><th>Table rows</th>{% if can_edit %}<th>Actions</th>{% endif %}</tr></thead>
   <tbody>{% for c in certs %}
     <tr><td class="num">{{ loop.index }}</td><td><a href="{{ url_for('workpacks.certificate', cert_pk=c.id) }}"><b>{{ c.cert_id }}</b></a></td><td>{{ c.form }}</td><td>{{ c.equipment }}</td>
-      <td>{{ c.rows_text }}</td>
+      <td>{% if c.rows_text %}<a href="{{ url_for('workpacks.rows', cert_pk=c.id) }}">{{ c.rows_text }}</a>{% endif %}</td>
       {% if can_edit %}<td class="actions">
         <a class="btn" href="{{ url_for('workpacks.certificate', cert_pk=c.id) }}">Edit</a>
         <form method="post" action="{{ url_for('workpacks.duplicate_certificate', cert_pk=c.id) }}" class="inline">
@@ -64,7 +70,7 @@
 <h2>Delete this workpack</h2>
 <form method="post" action="{{ url_for('workpacks.delete_workpack', wp_id=wp.id) }}"
       data-confirm="Delete {{ wp.title }} with all of its certificates? This cannot be undone.">
-  <p class="note">Removes the workpack, its certificates and their table rows. Forms already written to disk are not touched.</p>
+  <p class="note">Removes the workpack, its certificates, their table rows and its saved fill runs. Zip files you have already downloaded are not touched.</p>
   <button class="btn danger" type="submit">Delete workpack</button>
 </form>
 {% endif %}

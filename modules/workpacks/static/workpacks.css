@@ -82,3 +82,16 @@
 .wp .rmbtn:focus-visible { outline: 3px solid var(--accent); outline-offset: -3px; }
 .wp .gridtools { margin: 12px 0; display: flex; gap: 12px; align-items: center; }
 .wp #rows-status { color: var(--muted); font-size: 13px; }
+
+
+/* fill forms */
+.wp .tick { width: 44px; text-align: center; }
+.wp .tick input { width: 18px; height: 18px; accent-color: var(--ink); }
+.wp .sr { position: absolute; left: -9999px; }
+.wp .optrow { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; margin-bottom: 14px; }
+.wp .check { display: flex; gap: 8px; align-items: center; font-weight: 700; }
+.wp .check input { width: 18px; height: 18px; accent-color: var(--ink); }
+.wp .status { display: inline-block; padding: 2px 8px; border: 1px solid var(--ink); font-weight: 700; font-size: 12px; }
+.wp .status.bad { background: var(--accent); border-color: var(--accent); color: #fff; }
+.wp .btn[disabled] { opacity: .6; cursor: wait; }
+@media (max-width: 760px) { .wp .optrow { grid-template-columns: 1fr; } }

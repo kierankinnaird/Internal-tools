@@ -13,7 +13,7 @@ from .fields import CERTIFICATE_COLUMNS, CERTIFICATE_FIELDS
 
 HEADER_COLUMNS = ["hdr_title", "hdr_site", "hdr_mc1_no"]     # this certificate's header only
 FILE_COLUMNS = ["filename", "folder"]                        # where and under what name the form is written
-TEXTAREAS = {"scope", "procedure", "ee12_description"}
+TEXTAREAS = {"description", "scope", "procedure", "ee12_description"}
 
 _LABELS = dict(CERTIFICATE_FIELDS)
 _ENGINE_HINTS = {label: hint for _, label, hint in F.CERT_COLUMNS}

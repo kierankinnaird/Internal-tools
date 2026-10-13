@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+{% block title %}Fill forms - {{ wp.title }}{% endblock %}
+{% block head %}<link rel="stylesheet" href="{{ url_for('workpacks.static', filename='workpacks.css') }}">{% endblock %}
+{% block content %}
+<div class="wp">
+<div class="crumbs"><a href="{{ url_for('workpacks.index') }}">Workpacks</a> /
+  <a href="{{ url_for('workpacks.workpack', wp_id=wp.id) }}">{{ wp.title }}</a> / Fill forms</div>
+<h1>Fill forms</h1>
+<p class="lede">Writes the Apache forms for {{ wp.title }} from what is saved here. The blank templates are never changed;
+  each run goes in a folder of its own so earlier runs are kept.</p>
+
+<div class="banner {{ banner.level }}" role="status">
+  <strong>{{ banner.headline }}</strong>
+  {% for line in banner.details %}<div class="detail">{{ line }}</div>{% endfor %}
+</div>
+{% if error %}<div class="banner warn" role="alert"><strong>{{ error }}</strong></div>{% endif %}
+
+{% if not certs %}
+<div class="empty">This workpack has no certificates yet. <a href="{{ url_for('workpacks.workpack', wp_id=wp.id) }}#certificates">Add some</a> first.</div>
+{% elif ready %}
+<form method="post" action="{{ url_for('workpacks.fill_forms', wp_id=wp.id) }}" data-busy="Filling the forms...">
+  <h2>Certificates to fill</h2>
+  <p class="note"><button class="btn" type="button" data-check="all">Tick all</button>
+    <button class="btn" type="button" data-check="none">Tick none</button></p>
+  <table>
+    <thead><tr><th class="tick"><span class="sr">Fill</span></th><th>ID</th><th>Form</th><th>Equipment</th><th>Table rows</th></tr></thead>
+    <tbody>{% for c in certs %}
+      <tr><td class="tick"><input type="checkbox" name="cert" value="{{ c.id }}" id="c{{ c.id }}" checked aria-label="Fill {{ c.cert_id }}"></td>
+        <td><label for="c{{ c.id }}"><b>{{ c.cert_id }}</b></label></td><td>{{ c.form }}</td><td>{{ c.equipment }}</td><td>{{ c.rows_text }}</td></tr>
+    {% endfor %}</tbody>
+  </table>
+
+  <h2>Options</h2>
+  <div class="panel optrow">
+    <div><label for="spare_rows">Spare blank rows to keep (0 to 50)</label>
+      <input id="spare_rows" name="spare_rows" inputmode="numeric" autocomplete="off" placeholder="Leave as the template has them">
+      <div class="hint">For the line and joint tables. After the rows you entered, this many blank rows are kept and the rest are removed.</div></div>
+    <div><label class="check"><input type="checkbox" name="add_rows" value="1"> Add table rows when the template is full</label>
+      <div class="hint">Without this, a table with more rows than the template has room for is refused for that form.</div></div>
+  </div>
+  <button class="btn primary" type="submit">Fill forms</button>
+</form>
+{% endif %}
+
+<h2>Earlier runs</h2>
+{% if previous %}
+<table>
+  <thead><tr><th>Started</th><th>By</th><th>Result</th><th></th></tr></thead>
+  <tbody>{% for r in previous %}
+    <tr><td><a href="{{ url_for('workpacks.run_page', wp_id=wp.id, run_id=r.run_id) }}">{{ r.started[:16].replace('T', ' ') }} UTC</a></td>
+      <td>{{ r.user }}</td><td>{{ run_title(r) }}</td>
+      <td class="actions"><a class="btn" href="{{ url_for('workpacks.run_download', wp_id=wp.id, run_id=r.run_id) }}">Download zip</a>
+        <form method="post" action="{{ url_for('workpacks.run_delete', wp_id=wp.id, run_id=r.run_id) }}" class="inline"
+              data-confirm="Delete this run and its forms from the server?"><button class="btn danger" type="submit">Delete</button></form></td></tr>
+  {% endfor %}</tbody>
+</table>
+{% else %}<div class="empty">Nothing has been filled for this workpack yet.</div>{% endif %}
+</div>
+{% endblock %}
+{% block scripts %}<script src="{{ url_for('workpacks.static', filename='workpacks.js') }}"></script>{% endblock %}
