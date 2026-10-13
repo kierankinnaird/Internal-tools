@@ -1,0 +1,36 @@
+{
+  "_note": "Settings for the form filler. Every key is optional: delete a key to get the built-in behaviour. These settings only decide where files go, what they are called and which template sample text is blanked. They never decide what is typed into a form (that comes from the input sheet). Copy this file and use --settings to keep one per project.",
+  "profile": "Apache GOC forms (WPK 016 / 017)",
+  "output": {
+    "_note": "folders: the folder inside the output folder where each form is written. file_name: used when a Certificates row has no output file name; may use {form} and {id}. spare_rows: for forms with line or joint tables (SL1, MP1, JI1), delete unused blank rows keeping this many spare; leave a form out to keep the template's rows.",
+    "folders": {
+      "SH1": "2.0 SYSTEM HANDOVER",
+      "MC1": "3.0 MC1",
+      "PL1 A": "4.0 PL1",
+      "PL1 B": "4.0 PL1",
+      "AS1": "6.0 MECHANICAL CERTIFICATION",
+      "JI1": "6.0 MECHANICAL CERTIFICATION",
+      "MP1": "6.0 MECHANICAL CERTIFICATION",
+      "SL1": "6.0 MECHANICAL CERTIFICATION",
+      "EE12": "7.0 E&I CERTIFICATION",
+      "SC1": "7.0 E&I CERTIFICATION"
+    },
+    "default_folder": "99 OTHER FORMS",
+    "file_name": "{form} {id}",
+    "spare_rows": {}
+  },
+  "template_sample_text": {
+    "MC1": ["P-1121"]
+  },
+  "header_labels": {},
+  "header_extra_rows": {
+    "_note": "Apache's templates leave one or two blank, unlabelled boxes in the header block. Per form: the labels to write into them, in order, and which project value each takes (field: workpack, sh1, mc1, project_no, site, title). A label is skipped if the form already has one. Use [] to leave a form's blank boxes alone. SH1 and MC1 follow the real packs; NP1, PC1, PP1, SS1 and IRN are not in either pack and are a proposal.",
+    "SH1": [{"label": "WPK No:", "field": "workpack"}, {"label": "MC1 No:", "field": "mc1"}],
+    "MC1": [{"label": "WPK No:", "field": "workpack"}],
+    "NP1": [{"label": "WPK No:", "field": "workpack"}, {"label": "MC1 No:", "field": "mc1"}],
+    "PC1": [{"label": "WPK No:", "field": "workpack"}, {"label": "MC1 No:", "field": "mc1"}],
+    "PP1": [{"label": "WPK No:", "field": "workpack"}, {"label": "MC1 No:", "field": "mc1"}],
+    "SS1": [{"label": "WPK No:", "field": "workpack"}],
+    "IRN": [{"label": "WPK No:", "field": "workpack"}]
+  }
+}
