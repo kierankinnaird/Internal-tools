@@ -14,7 +14,7 @@ from core.context import Context, SqliteAudit
 from core.modules import mount
 
 ROOT = Path(__file__).resolve().parent.parent
-ORDER = ["norms", "jobcards"]   # menu order and load order (providers before users)
+ORDER = ["norms", "jobcards", "workpacks"]   # menu order and load order (providers before users)
 
 
 def read_enabled(path: Optional[Path] = None) -> list:

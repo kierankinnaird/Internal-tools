@@ -1,0 +1,1 @@
+from .manifest import MODULE  # noqa: F401

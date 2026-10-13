@@ -1,0 +1,34 @@
+/* Workpacks: sharp edges, white page, near-black text, orange accents. Variables come from host.css. */
+.wp h2 { font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; margin: 30px 0 10px;
+         padding-bottom: 6px; border-bottom: 2px solid var(--ink); }
+.wp table { width: 100%; border-collapse: collapse; background: #fff; border: 1px solid var(--ink); }
+.wp th { text-align: left; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em;
+        padding: 10px 12px; border-bottom: 2px solid var(--ink); }
+.wp td { padding: 9px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
+.wp tbody tr:hover td { background: var(--hover); }
+.wp tr:last-child td { border-bottom: 0; }
+.wp .num { text-align: right; font-variant-numeric: tabular-nums; }
+.wp .by { color: var(--muted); font-size: 12px; }
+.wp .empty { padding: 28px 16px; text-align: center; color: var(--muted); border: 1px dashed var(--ink); }
+.wp .note { color: var(--muted); font-size: 13px; margin: 12px 0; max-width: 70ch; }
+
+.wp .banner { margin: 0 0 14px; padding: 10px 14px; border: 1px solid var(--ink); border-left-width: 6px; background: #fff; }
+.wp .banner.ok { border-left-color: var(--ink); }
+.wp .banner.warn { border-left-color: var(--accent); background: #fff7f0; }
+.wp .banner .detail { margin-top: 4px; font-size: 13px; color: var(--muted); overflow-wrap: anywhere; }
+
+.wp .panel { border: 1px solid var(--ink); padding: 16px; background: #fff; }
+.wp .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+.wp .grid .wide { grid-column: 1 / -1; }
+.wp label { display: block; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em;
+            color: var(--muted); margin-bottom: 4px; }
+.wp input, .wp select, .wp textarea { width: 100%; padding: 9px 10px; font: inherit; color: var(--ink);
+                                      background: #fff; border: 1px solid var(--ink); }
+.wp input:focus, .wp select:focus, .wp textarea:focus { outline: 3px solid var(--accent); outline-offset: 0; }
+.wp .btn { display: inline-block; padding: 9px 18px; font: inherit; font-weight: 700; color: var(--ink);
+           background: #fff; border: 1px solid var(--ink); cursor: pointer; text-decoration: none; }
+.wp .btn:hover { background: var(--hover); }
+.wp .btn.primary { background: var(--accent); border-color: var(--accent); }
+.wp .btn.primary:hover { background: var(--ink); border-color: var(--ink); color: #fff; }
+.wp .btn:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+@media (max-width: 760px) { .wp .grid { grid-template-columns: 1fr; } }

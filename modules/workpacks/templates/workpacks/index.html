@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block title %}Workpacks{% endblock %}
+{% block head %}<link rel="stylesheet" href="{{ url_for('workpacks.static', filename='workpacks.css') }}">{% endblock %}
+{% block content %}
+<div class="wp">
+<h1>Workpacks</h1>
+<p class="lede">Each workpack holds the project details and certificates for one job. From it the Apache forms are filled in one go, so the details are typed once.</p>
+
+<div class="banner {{ banner.level }}" role="status">
+  <strong>{{ banner.headline }}</strong>
+  {% for line in banner.details %}<div class="detail">{{ line }}</div>{% endfor %}
+</div>
+
+{% if error %}<div class="banner warn" role="alert"><strong>{{ error }}</strong></div>{% endif %}
+
+<h2>All workpacks</h2>
+{% if workpacks %}
+<table>
+  <thead><tr><th>Project title</th><th>Project no</th><th>Workpack no</th><th>Site</th>
+    <th class="num">Certificates</th><th>Last changed</th></tr></thead>
+  <tbody>{% for w in workpacks %}
+    <tr><td><b>{{ w.title }}</b></td><td>{{ w.project_no }}</td><td>{{ w.workpack_no }}</td><td>{{ w.site }}</td>
+      <td class="num">{{ w.certificates }}</td>
+      <td>{{ w.updated_at[:16].replace('T', ' ') }} UTC<div class="by">{{ w.updated_by }}</div></td></tr>
+  {% endfor %}</tbody>
+</table>
+{% else %}<div class="empty">No workpacks yet. Create the first one below.</div>{% endif %}
+
+{% if can_edit %}
+<h2>New workpack</h2>
+<form method="post" action="{{ url_for('workpacks.create') }}" class="panel">
+  <div class="grid">
+    <div class="wide"><label for="title">Project title</label>
+      <input id="title" name="title" required autocomplete="off" placeholder="Shown in the header of every form">
+    </div>
+    <div><label for="project_no">Project number (FCP)</label><input id="project_no" name="project_no" autocomplete="off"></div>
+    <div><label for="workpack_no">Workpack number</label><input id="workpack_no" name="workpack_no" autocomplete="off"></div>
+    <div><label for="sh1_no">SH1 number</label><input id="sh1_no" name="sh1_no" autocomplete="off"></div>
+    <div><label for="mc1_no">MC1 number</label><input id="mc1_no" name="mc1_no" autocomplete="off"></div>
+    <div><label for="site">Site</label><input id="site" name="site" autocomplete="off"></div>
+  </div>
+  <p class="note">Everything else (default location and system, handover wording, certificates) is added on the workpack's own page.</p>
+  <button class="btn primary" type="submit">Create workpack</button>
+</form>
+{% endif %}
+</div>
+{% endblock %}
