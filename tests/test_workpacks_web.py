@@ -48,9 +48,10 @@ def test_creating_a_workpack_lists_it_and_is_audited(client):
     c, tmp, _ = client
     r = c.post("/workpacks/", data={"title": "Wellbay 18 clearance", "project_no": "FCP-123", "workpack_no": "WPK-018",
                                     "site": "Alpha"})
-    assert r.status_code == 302 and r.headers["Location"].endswith("/workpacks/")
+    assert r.status_code == 302 and r.headers["Location"].endswith("/workpacks/1")
     html = c.get("/workpacks/").get_data(as_text=True)
-    assert "Wellbay 18 clearance" in html and "FCP-123" in html and "WPK-018" in html and "Alpha" in html
+    assert "Wellbay 18 clearance" in html and 'href="/workpacks/1"' in html
+    assert "FCP-123" in html and "WPK-018" in html and "Alpha" in html
     assert "No workpacks yet" not in html
     rows = sqlite3.connect(tmp / "audit.sqlite").execute("SELECT user, module, action, detail FROM audit").fetchall()
     assert rows == [("tester", "workpacks", "workpack_created", "Wellbay 18 clearance")]

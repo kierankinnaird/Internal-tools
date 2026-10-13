@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+{% block title %}{{ wp.title }}{% endblock %}
+{% block head %}<link rel="stylesheet" href="{{ url_for('workpacks.static', filename='workpacks.css') }}">{% endblock %}
+{% block content %}
+<div class="wp">
+<div class="crumbs"><a href="{{ url_for('workpacks.index') }}">Workpacks</a> / {{ wp.title }}</div>
+<h1>{{ wp.title }}</h1>
+<p class="lede">Last changed {{ wp.updated_at[:16].replace('T', ' ') }} UTC by {{ wp.updated_by }}.</p>
+
+{% if error %}<div class="banner warn" role="alert"><strong>{{ error }}</strong></div>{% endif %}
+
+<h2 id="certificates">Certificates</h2>
+{% if certs %}
+<table>
+  <thead><tr><th class="num">#</th><th>ID</th><th>Form</th><th>Equipment</th><th>Table rows</th>{% if can_edit %}<th>Actions</th>{% endif %}</tr></thead>
+  <tbody>{% for c in certs %}
+    <tr><td class="num">{{ loop.index }}</td><td><b>{{ c.cert_id }}</b></td><td>{{ c.form }}</td><td>{{ c.equipment }}</td>
+      <td>{{ c.rows_text }}</td>
+      {% if can_edit %}<td class="actions">
+        <form method="post" action="{{ url_for('workpacks.duplicate_certificate', cert_pk=c.id) }}" class="inline">
+          <input name="cert_id" placeholder="New ID" aria-label="New ID for the copy of {{ c.cert_id }}" autocomplete="off" required>
+          <button class="btn" type="submit">Duplicate</button></form>
+        <form method="post" action="{{ url_for('workpacks.delete_certificate', cert_pk=c.id) }}" class="inline"
+              data-confirm="Delete certificate {{ c.cert_id }} and its table rows?">
+          <button class="btn danger" type="submit">Delete</button></form>
+      </td>{% endif %}</tr>
+  {% endfor %}</tbody>
+</table>
+{% else %}<div class="empty">No certificates yet. Add the first one below.</div>{% endif %}
+
+{% if can_edit %}
+<form method="post" action="{{ url_for('workpacks.add_certificate', wp_id=wp.id) }}" class="panel addrow">
+  <div><label for="cert_id">Certificate ID</label>
+    <input id="cert_id" name="cert_id" required autocomplete="off" placeholder="e.g. AS1-PL33000"></div>
+  <div><label for="form">Form</label>
+    <input id="form" name="form" list="forms" required autocomplete="off" placeholder="e.g. AS1">
+    <datalist id="forms">{% for f in forms %}<option value="{{ f }}">{% endfor %}</datalist></div>
+  <div class="shrink"><button class="btn primary" type="submit">Add certificate</button></div>
+</form>
+<p class="note">The ID is a short name that is unique in this workpack. Its details are filled in on the certificate's own page.</p>
+{% endif %}
+
+<h2>Project details</h2>
+{% if can_edit %}<form method="post" action="{{ url_for('workpacks.update_workpack', wp_id=wp.id) }}" class="panel">{% else %}<div class="panel">{% endif %}
+  {% for g in groups %}
+  <fieldset>
+    <legend>{{ g.heading }}</legend>
+    {% if g.hint %}<p class="note">{{ g.hint }}</p>{% endif %}
+    <div class="grid">
+      {% for f in g.fields %}
+      <div{% if f.textarea or f.name == 'title' %} class="wide"{% endif %}><label for="f_{{ f.name }}">{{ f.label }}</label>
+        {% if f.textarea %}<textarea id="f_{{ f.name }}" name="{{ f.name }}" rows="4"{% if not can_edit %} readonly{% endif %}>{{ f.value }}</textarea>
+        {% else %}<input id="f_{{ f.name }}" name="{{ f.name }}" value="{{ f.value }}" autocomplete="off"{% if not can_edit %} readonly{% endif %}>{% endif %}
+      </div>
+      {% endfor %}
+    </div>
+  </fieldset>
+  {% endfor %}
+  {% if can_edit %}<button class="btn primary" type="submit">Save details</button>{% endif %}
+{% if can_edit %}</form>{% else %}</div>{% endif %}
+
+{% if can_edit %}
+<h2>Delete this workpack</h2>
+<form method="post" action="{{ url_for('workpacks.delete_workpack', wp_id=wp.id) }}"
+      data-confirm="Delete {{ wp.title }} with all of its certificates? This cannot be undone.">
+  <p class="note">Removes the workpack, its certificates and their table rows. Forms already written to disk are not touched.</p>
+  <button class="btn danger" type="submit">Delete workpack</button>
+</form>
+{% endif %}
+</div>
+{% endblock %}
+{% block scripts %}<script src="{{ url_for('workpacks.static', filename='workpacks.js') }}"></script>{% endblock %}

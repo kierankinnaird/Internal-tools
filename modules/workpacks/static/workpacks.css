@@ -32,3 +32,22 @@
 .wp .btn.primary:hover { background: var(--ink); border-color: var(--ink); color: #fff; }
 .wp .btn:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
 @media (max-width: 760px) { .wp .grid { grid-template-columns: 1fr; } }
+
+/* workpack page */
+.wp .crumbs { font-size: 13px; color: var(--muted); margin-bottom: 10px; }
+.wp .crumbs a { color: var(--ink); }
+.wp a { color: var(--ink); text-decoration-color: var(--accent); text-decoration-thickness: 2px; text-underline-offset: 3px; }
+.wp a:hover { background: var(--accent); }
+.wp textarea { resize: vertical; }
+.wp fieldset { border: 0; padding: 0; margin: 0 0 22px; }
+.wp legend { padding: 0; margin-bottom: 4px; font-weight: 700; }
+.wp fieldset .note { margin: 0 0 10px; }
+.wp .addrow { display: grid; grid-template-columns: 1fr 1fr auto; gap: 12px; align-items: end; margin-top: 14px; }
+.wp .actions { white-space: nowrap; }
+.wp form.inline { display: inline-flex; gap: 6px; align-items: center; margin-right: 8px; }
+.wp form.inline input { width: 130px; padding: 6px 8px; }
+.wp form.inline .btn { padding: 6px 12px; }
+.wp .btn.danger { border-color: var(--accent-text); color: var(--accent-text); }
+.wp .btn.danger:hover { background: var(--ink); border-color: var(--ink); color: #fff; }
+.wp input[readonly], .wp textarea[readonly] { background: var(--hover); }
+@media (max-width: 760px) { .wp .addrow { grid-template-columns: 1fr; } }

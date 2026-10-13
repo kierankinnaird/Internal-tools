@@ -19,7 +19,7 @@
   <thead><tr><th>Project title</th><th>Project no</th><th>Workpack no</th><th>Site</th>
     <th class="num">Certificates</th><th>Last changed</th></tr></thead>
   <tbody>{% for w in workpacks %}
-    <tr><td><b>{{ w.title }}</b></td><td>{{ w.project_no }}</td><td>{{ w.workpack_no }}</td><td>{{ w.site }}</td>
+    <tr><td><a href="{{ url_for('workpacks.workpack', wp_id=w.id) }}"><b>{{ w.title }}</b></a></td><td>{{ w.project_no }}</td><td>{{ w.workpack_no }}</td><td>{{ w.site }}</td>
       <td class="num">{{ w.certificates }}</td>
       <td>{{ w.updated_at[:16].replace('T', ' ') }} UTC<div class="by">{{ w.updated_by }}</div></td></tr>
   {% endfor %}</tbody>
@@ -39,7 +39,7 @@
     <div><label for="mc1_no">MC1 number</label><input id="mc1_no" name="mc1_no" autocomplete="off"></div>
     <div><label for="site">Site</label><input id="site" name="site" autocomplete="off"></div>
   </div>
-  <p class="note">Everything else (default location and system, handover wording, certificates) is added on the workpack's own page.</p>
+  <p class="note">You are taken to the workpack's own page next, where the rest of the details and the certificates are added.</p>
   <button class="btn primary" type="submit">Create workpack</button>
 </form>
 {% endif %}
