@@ -11,12 +11,15 @@ Usage:
     python fill_workpack.py                            (no arguments: opens file/folder pickers)
     python fill_workpack.py --make-sheet "<new input workbook.xlsx>"
     python fill_workpack.py "<input workbook.xlsx>" --templates "<templates folder>" --out "<output folder>"
-                            [--overwrite] [--add-rows] [--validate] [--no-open]
+                            [--overwrite] [--add-rows] [--settings FILE] [--no-open]
+
+Settings (where files go, what they are called, template sample text to blank) are read from
+fill_settings.json next to this tool, or from --settings. The built-in defaults apply without it.
 
 It only writes new files inside the output folder, and refuses to run if the output folder is
 the template folder or inside it.
 """
-import argparse, copy, csv, datetime, io, os, re, sys, zipfile
+import argparse, copy, csv, datetime, hashlib, io, json, os, re, sys, zipfile
 from collections import OrderedDict, defaultdict
 from lxml import etree
 
@@ -27,6 +30,12 @@ try:
 except ImportError:
     openpyxl = None
 
+VERSION = "2.3"      # Workpack Tools release number; keep in step with CHANGELOG.md ("-dev" = not yet released)
+
+# NMC Energy brand colours (taken from nmcenergy.com): near-black and the accent blue.
+BRAND_DARK = "0F0F12"
+BRAND_BLUE = "1863DC"
+
 W = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
 XML = "http://www.w3.org/XML/1998/namespace"
 q = lambda t: "{%s}%s" % (W, t)
@@ -34,7 +43,7 @@ q = lambda t: "{%s}%s" % (W, t)
 # =========================================================================== form catalogue
 # Folder each form is written to, mirroring the workpack section folders.
 SECTION = {
-    "SH1": "2.0 SYSTEM HANDOVER", "MC1": "3.0 MC1", "PL1 A": "4.0 PL1", "PL1 B": "4.0 PL1",
+    "C1": "0.0 CCHP CHECKLIST", "DM": "1.0 SCOPE OF WORK", "SH1": "2.0 SYSTEM HANDOVER", "MC1": "3.0 MC1", "PL1 A": "4.0 PL1", "PL1 B": "4.0 PL1",
     "AS1": "6.0 MECHANICAL CERTIFICATION", "JI1": "6.0 MECHANICAL CERTIFICATION",
     "MP1": "6.0 MECHANICAL CERTIFICATION", "SL1": "6.0 MECHANICAL CERTIFICATION",
     "EE12": "7.0 E&I CERTIFICATION", "SC1": "7.0 E&I CERTIFICATION",
@@ -63,6 +72,10 @@ HEADER_BOOKMARK = {"bmProjectCodeDesc": "title", "bmProjectCode": "project_no", 
 # Body field slots. loc = (table index in main part, row, col); label = (row, col, expected label text)
 # slot: "bm" = the empty run inside the cell's bookmark; "para:N" = paragraph N of the cell.
 BODY_FIELDS = {
+    # C1 (CCHP completion checklist, Apache form ANS-PRO-225_3rev5): its identification block is in the body, not in a header part
+    "C1": [("project_no", (0, 1, 1), (1, 0, "fcp number"), "para:0"), ("jre", (0, 1, 3), (1, 2, "responsible engineering (jre)"), "para:0"),
+           ("workpack", (0, 2, 1), (2, 0, "document number"), "para:0"), ("sh1", (0, 2, 3), (2, 2, "sh1 number"), "para:0"),
+           ("cchp_title", (0, 3, 1), (3, 0, "title"), "para:0")],
     "AS1": [("equipment", (0, 0, 1), (0, 0, "equipment"), "bm"), ("location", (0, 0, 3), (0, 2, "location"), "bm"),
             ("area", (0, 1, 1), (1, 0, "area"), "bm"), ("system", (0, 1, 3), (1, 2, "system"), "bm"),
             ("drawing", (0, 2, 1), (2, 0, "drawing"), "bm"), ("subsystem", (0, 2, 3), (2, 2, "sub-system"), "bm"),
@@ -89,12 +102,249 @@ BODY_FIELDS = {
             ("handover_includes", (0, 2, 0), (2, 0, "handover includes"), "bm"),
             ("mc1_number_block", (1, 1, 1), (1, 1, "mc1 number"), "bm")],
 }
+# DM = the workpack master (cover, scope of work, contents, drawing register). Its identification values sit in cover text boxes,
+# in the cover table and in the page header, so it has its own fill (fill_dm) instead of the header / body maps above.
+DM_COVER_LABELS = {"apachedocno": "workpack", "fcpno": "project_no", "sh1no": "sh1", "rev": "revision"}     # cover text boxes: label paragraph, value appended
+DM_COVER_PLACEHOLDERS = {"[SITE]": "site", "[PROJECT TITLE]": "cover_title"}                              # cover text boxes: placeholder replaced
+DM_COVER_TABLE = [(4, "title", "title"), (5, "cchpno", "workpack"), (6, "sh1no", "sh1"), (7, "fcpno", "project_no")]   # (row, label, key); value appended after the label
+DM_REV_CELL = (12, 0, "revision")                                                                         # the revision table's first cell
+DM_HEADER = {"sh1": "sh1", "cchpno": "workpack", "nmccchpno": "nmc_cchp", "fcpno": "project_no", "rev": "revision"}   # page header: label -> key
+DM_BODY_CELLS = {"t0 r%d c0" % r for r, _, _ in DM_COVER_TABLE} | {"t0 r%d c%d" % (DM_REV_CELL[0], DM_REV_CELL[1])}
+
+# Placeholder text inside a template cell that is replaced (not typed into a slot): key, loc, label, placeholder.
+# The placeholder may be split across several runs in the template.
+BODY_REPLACE = {
+    "SL1": [("sl1a", (0, 2, 1), (2, 0, "scope of test"), "SL1A-XX-XXXXX")],
+}
 # Repeating-row tables: (table index, first data row, {column: key}, header labels to verify)
 ROW_TABLES = {
     "SL1": (1, 2, {0: "pid", 1: "line", 3: "from", 4: "to"}, [(0, 0, "p & id no"), (0, 1, "line no")], "Lines"),
     "MP1": (1, 2, {0: "pid", 1: "line", 3: "from", 4: "to"}, [(0, 0, "iso no"), (0, 1, "line no")], "Lines"),
     "JI1": (1, 3, {0: "joint", 1: "drawing", 2: "size", 3: "rating", 4: "type", 6: "torque"}, [(0, 0, "joint number"), (0, 1, "drawing")], "Joints"),
 }
+
+# =========================================================================== settings
+# A settings file (JSON) changes how forms are named, filed and tidied. Everything is optional: a missing
+# file, or a missing key, means the built-in behaviour below. The settings never change what is written
+# into a form; they only decide where files go, what they are called and which template sample text is blanked.
+TOOL_DIR = os.path.dirname(sys.executable) if getattr(sys, "frozen", False) else os.path.dirname(os.path.abspath(__file__))
+SETTINGS_FILE = "fill_settings.json"
+DEFAULT_SETTINGS = {
+    "profile": "built-in defaults",
+    "output": {
+        "folders": dict(SECTION),            # form -> folder inside the output folder
+        "default_folder": DEFAULT_SECTION,   # for forms not listed above
+        "file_name": "{form} {id}",          # used when the Certificates row has no output file name
+        "spare_rows": {},                    # form -> N: delete unused blank rows keeping N spare (omit = leave the template's rows)
+    },
+    # Sample text Apache's blank templates carry in cells the tool does not fill; blanked in every output.
+    "template_sample_text": {"MC1": ["P-1121"]},
+    # Extra header label spellings, per header field (see HEADER_LABELS for the field names).
+    "header_labels": {},
+    # Apache's templates leave one or two blank, unlabelled boxes in the header block (editable in the protected form).
+    # Per form: the labels to write into them, in order, and the project value each one takes. A label is only written
+    # if the form's header has no such label already.
+    "header_extra_rows": {
+        "SH1": [{"label": "WPK No:", "field": "workpack"}, {"label": "MC1 No:", "field": "mc1"}],
+        "MC1": [{"label": "WPK No:", "field": "workpack"}],
+        "NP1": [{"label": "WPK No:", "field": "workpack"}, {"label": "MC1 No:", "field": "mc1"}],
+        "PC1": [{"label": "WPK No:", "field": "workpack"}, {"label": "MC1 No:", "field": "mc1"}],
+        "PP1": [{"label": "WPK No:", "field": "workpack"}, {"label": "MC1 No:", "field": "mc1"}],
+        "SS1": [{"label": "WPK No:", "field": "workpack"}],
+        "IRN": [{"label": "WPK No:", "field": "workpack"}],
+    },
+}
+SETTINGS_TOP_KEYS = ("profile", "output", "template_sample_text", "header_labels", "header_extra_rows")
+SETTINGS_OUTPUT_KEYS = ("folders", "default_folder", "file_name", "spare_rows")
+
+def default_settings_path():
+    p = os.path.join(TOOL_DIR, SETTINGS_FILE)
+    return p if os.path.isfile(p) else None
+
+def load_settings(path=None):
+    """Built-in defaults, overlaid with the settings file when one is given. Every problem is reported together."""
+    s = copy.deepcopy(DEFAULT_SETTINGS)
+    s["_path"] = None
+    if not path:
+        return s
+    try:
+        with open(path, encoding="utf-8-sig") as fh:
+            data = json.load(fh)
+    except OSError as e:
+        raise FillError("cannot read the settings file %s: %s" % (path, e))
+    except ValueError as e:
+        raise FillError("the settings file %s is not valid JSON: %s" % (path, e))
+    errs = []
+    if not isinstance(data, dict):
+        raise FillError("the settings file %s must hold one JSON object" % path)
+    def is_str_list(v):
+        return isinstance(v, list) and all(isinstance(x, str) and x for x in v)
+    for k in data:
+        if k not in SETTINGS_TOP_KEYS and not k.startswith("_"):
+            errs.append("unknown setting '%s' (known: %s)" % (k, ", ".join(SETTINGS_TOP_KEYS)))
+    if "profile" in data:
+        if isinstance(data["profile"], str) and data["profile"].strip():
+            s["profile"] = data["profile"].strip()
+        else:
+            errs.append("'profile' must be a short name")
+    out = data.get("output", {})
+    if not isinstance(out, dict):
+        errs.append("'output' must be an object")
+        out = {}
+    for k in out:
+        if k not in SETTINGS_OUTPUT_KEYS and not k.startswith("_"):
+            errs.append("unknown setting 'output.%s' (known: %s)" % (k, ", ".join(SETTINGS_OUTPUT_KEYS)))
+    if "folders" in out:
+        if isinstance(out["folders"], dict) and all(isinstance(a, str) and isinstance(b, str) and b.strip() for a, b in out["folders"].items()):
+            for form, folder in out["folders"].items():
+                if re.search(r'[<>:"|?*]', folder) or os.path.isabs(folder) or ".." in re.split(r"[\\/]", folder):
+                    errs.append("output.folders['%s'] = '%s' must be a plain relative folder name" % (form, folder))
+                else:
+                    s["output"]["folders"][form] = folder
+        else:
+            errs.append("'output.folders' must map a form name to a folder name")
+    if "default_folder" in out:
+        if isinstance(out["default_folder"], str) and out["default_folder"].strip() and not re.search(r'[<>:"|?*]', out["default_folder"]) and not os.path.isabs(out["default_folder"]) and ".." not in re.split(r"[\\/]", out["default_folder"]):
+            s["output"]["default_folder"] = out["default_folder"]
+        else:
+            errs.append("'output.default_folder' must be a plain relative folder name")
+    if "file_name" in out:
+        fn = out["file_name"]
+        if isinstance(fn, str) and fn.strip() and set(re.findall(r"\{(\w*)\}", fn)) <= {"form", "id"} and fn.count("{") == fn.count("}") == len(re.findall(r"\{\w*\}", fn)):
+            s["output"]["file_name"] = fn
+        else:
+            errs.append("'output.file_name' must be text that may use only {form} and {id}")
+    if "spare_rows" in out:
+        sr = out["spare_rows"]
+        if isinstance(sr, dict):
+            for form, n in sr.items():
+                if n is None:
+                    s["output"]["spare_rows"].pop(form, None)
+                elif isinstance(n, int) and not isinstance(n, bool) and 0 <= n <= 50:
+                    if form not in ROW_TABLES:
+                        errs.append("output.spare_rows['%s']: only forms with line or joint tables (%s) can be trimmed" % (form, ", ".join(sorted(ROW_TABLES))))
+                    else:
+                        s["output"]["spare_rows"][form] = n
+                else:
+                    errs.append("output.spare_rows['%s'] must be a whole number from 0 to 50, or null" % form)
+        else:
+            errs.append("'output.spare_rows' must map a form name to a number")
+    if "template_sample_text" in data:
+        t = data["template_sample_text"]
+        if isinstance(t, dict) and all(isinstance(a, str) and is_str_list(b) for a, b in t.items()):
+            for form, strings in t.items():
+                s["template_sample_text"][form] = list(strings)
+        else:
+            errs.append("'template_sample_text' must map a form name to a list of text strings")
+    if "header_labels" in data:
+        h = data["header_labels"]
+        if isinstance(h, dict):
+            for key, labels in h.items():
+                if key not in HEADER_LABELS:
+                    errs.append("header_labels: unknown header field '%s' (known: %s)" % (key, ", ".join(HEADER_LABELS)))
+                elif not is_str_list(labels):
+                    errs.append("header_labels['%s'] must be a list of label texts" % key)
+                else:
+                    s["header_labels"][key] = list(labels)
+        else:
+            errs.append("'header_labels' must map a header field to a list of label texts")
+    if "header_extra_rows" in data:
+        h = data["header_extra_rows"]
+        if isinstance(h, dict):
+            for form, rows in h.items():
+                if form.startswith("_"):
+                    continue
+                ok = isinstance(rows, list) and all(isinstance(r, dict) and isinstance(r.get("label"), str) and r["label"].strip()
+                                                    and r.get("field") in HEADER_LABELS for r in rows)
+                if ok:
+                    s["header_extra_rows"][form] = [{"label": r["label"].strip(), "field": r["field"]} for r in rows]
+                else:
+                    errs.append("header_extra_rows['%s'] must be a list of {\"label\": text, \"field\": one of %s}" % (form, ", ".join(HEADER_LABELS)))
+        else:
+            errs.append("'header_extra_rows' must map a form name to a list of label rows")
+    if errs:
+        raise FillError("problems in the settings file %s:\n  - %s" % (path, "\n  - ".join(errs)))
+    s["_path"] = path
+    return s
+
+def header_labels_for(settings):
+    """HEADER_LABELS plus any extra spellings from the settings (compared ignoring case, spaces and colons)."""
+    out = OrderedDict()
+    for key, labels in HEADER_LABELS.items():
+        extra = [re.sub(r"[^a-z0-9&]", "", x.lower()) for x in (settings or {}).get("header_labels", {}).get(key, [])]
+        out[key] = list(labels) + [x for x in extra if x and x not in labels]
+    return out
+
+# =========================================================================== bundled templates
+# Apache's blank templates ship with the tool in a `templates` folder next to it (copied unchanged, see
+# dev/build_template_bundle.py). MANIFEST.csv there records each file's SHA-256 so the tool can say whether the
+# template it used is the version that came with it. A different folder can still be chosen with --templates.
+BUNDLED_TEMPLATES = os.path.join(TOOL_DIR, "templates")
+TEMPLATE_MANIFEST = "MANIFEST.csv"
+
+def default_templates_dir():
+    """The templates folder that ships with the tool, or None if it is not there."""
+    try:
+        if os.path.isdir(BUNDLED_TEMPLATES) and any(f.lower().endswith(".docx") for f in os.listdir(BUNDLED_TEMPLATES)):
+            return BUNDLED_TEMPLATES
+    except OSError:
+        pass
+    return None
+
+def load_template_manifest():
+    """{file name: sha256} from the bundled MANIFEST.csv; empty when there is none."""
+    path = os.path.join(BUNDLED_TEMPLATES, TEMPLATE_MANIFEST)
+    out = {}
+    try:
+        with open(path, newline="", encoding="utf-8-sig") as fh:
+            for row in csv.DictReader(fh):
+                if row.get("file") and row.get("sha256"):
+                    out[row["file"]] = row["sha256"].lower()
+    except OSError:
+        pass
+    return out
+
+def load_template_originals():
+    """{file name: sha256 of Apache's original} for the bundled copies that carry labelled header boxes (v2.2 on);
+    empty when there is no manifest or none of the copies was changed."""
+    path = os.path.join(BUNDLED_TEMPLATES, TEMPLATE_MANIFEST)
+    out = {}
+    try:
+        with open(path, newline="", encoding="utf-8-sig") as fh:
+            for row in csv.DictReader(fh):
+                if row.get("file") and row.get("labelled header boxes") == "yes" and row.get("apache original sha256"):
+                    out[row["file"]] = row["apache original sha256"].lower()
+    except OSError:
+        pass
+    return out
+
+def file_sha256(path):
+    h = hashlib.sha256()
+    with open(path, "rb") as fh:
+        for chunk in iter(lambda: fh.read(1 << 20), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+def template_check(path, manifest, cache=None, originals=None):
+    """Compare a template with the bundled manifest: matches bundled / matches Apache original / DIFFERS from bundled /
+    not in bundled set / no manifest. 'matches Apache original' = Apache's own file, of which the bundled copy has
+    its blank header boxes labelled; the tool labels them itself when filling, so the result is the same."""
+    if not manifest:
+        return "no manifest"
+    name = os.path.basename(path)
+    if name not in manifest:
+        return "not in bundled set"
+    if cache is not None and path in cache:
+        digest = cache[path]
+    else:
+        digest = file_sha256(path)
+        if cache is not None:
+            cache[path] = digest
+    if digest == manifest[name]:
+        return "matches bundled"
+    if originals and digest == originals.get(name):
+        return "matches Apache original"
+    return "DIFFERS from bundled"
 
 # =========================================================================== small helpers
 class FillError(Exception):
@@ -215,6 +465,63 @@ def clone_empty_paragraph(p):
             n.remove(child)
     return n
 
+def replace_in_paragraph(p, old, new):
+    """Replace every occurrence of `old` in paragraph p with `new`, even when `old` is split across runs.
+    The replacement takes the formatting of the run where the match starts. Returns the number of replacements."""
+    if not old:
+        return 0
+    count = 0
+    while True:
+        ts = list(p.iter(q("t")))
+        full = "".join(t.text or "" for t in ts)
+        i = full.find(old)
+        if i < 0:
+            return count
+        j, pos, first = i + len(old), 0, True
+        for t in ts:
+            s = t.text or ""
+            a, b = pos, pos + len(s)
+            pos = b
+            if b <= i or a >= j:
+                continue
+            left = s[:max(0, i - a)]
+            right = s[j - a:] if b > j else ""
+            t.text = (left + new + right) if first else (left + right)
+            first = False
+            if t.text != t.text.strip() or "  " in t.text:
+                t.set("{%s}space" % XML, "preserve")
+        count += 1
+        if new and old in new:
+            return count
+
+def blank_samples(doc, form, strings, log):
+    """Remove sample text that Apache's blank template carries in cells this tool does not fill."""
+    root = doc.tree(doc.main)
+    for s in strings:
+        n = sum(replace_in_paragraph(p, s, "") for p in root.iter(q("p")))
+        if n:
+            doc.changed.add(doc.main)
+            doc.touched.append((doc.main, "blanked template sample text '%s'" % s))
+            log.append(("INFO", "blanked template sample text '%s'" % s))
+
+def fill_replace(doc, form, values, log):
+    """Replace placeholder text inside a template cell (for example the SL1A request number in an SL1)."""
+    root = doc.tree(doc.main)
+    tables = top_tables(root)
+    for key, (ti, ri, ci), (lr, lc, lab), token in BODY_REPLACE.get(form, []):
+        if values.get(key) in (None, ""):
+            continue
+        if ti >= len(tables):
+            raise FillError("template has no table %d for field '%s'" % (ti, key))
+        got = norm_label(ctext(get_cell(tables[ti], lr, lc)))
+        if not got.startswith(norm_label(lab)):
+            raise FillError("label check failed for '%s': expected '%s' beside the slot, found '%s'" % (key, lab, got[:40]))
+        tc = get_cell(tables[ti], ri, ci)
+        if sum(replace_in_paragraph(p, token, str(values[key])) for p in tc.findall(q("p"))) == 0:
+            raise FillError("placeholder '%s' not found in the template for '%s'" % (token, key))
+        doc.changed.add(doc.main)
+        doc.touched.append((doc.main, "%s replaced placeholder %s (table %d row %d col %d)" % (key, token, ti, ri, ci)))
+
 # =========================================================================== template access
 def find_template(tpl_dir, code):
     best = None
@@ -258,7 +565,8 @@ class Doc:
                 zout.writestr(zi, data)
 
 # =========================================================================== filling operations
-def fill_header(doc, values, log):
+def fill_header(doc, values, log, labels=None):
+    labels_map = labels or HEADER_LABELS
     filled = set()
     for part in doc.header_parts():
         root = doc.tree(part)
@@ -267,10 +575,10 @@ def fill_header(doc, values, log):
                 cells = tr.findall(q("tc"))
                 for i, c in enumerate(cells):
                     first = norm_label(ptext(c.findall(q("p"))[0])) if c.findall(q("p")) else ""
-                    for key, labels in HEADER_LABELS.items():
+                    for key, key_labels in labels_map.items():
                         if key not in values or not values[key]:
                             continue
-                        if first not in labels:
+                        if first not in key_labels:
                             continue
                         # value location: the next cell in the row, or (for SITE) the second paragraph of the same cell
                         if key == "site" and len(c.findall(q("p"))) >= 2 and "site" in first and len(cells[i + 1:]) >= 0 and c is cells[i]:
@@ -294,6 +602,95 @@ def fill_header(doc, values, log):
                         doc.touched.append((part, "header " + key))
                         filled.add(key)
     return filled
+
+def fill_header_extra(doc, extras, values, labels_map, log):
+    """Label the blank, unlabelled rows of the header block and fill them with project numbers the form's header lacks.
+    Each entry of `extras` ({"label", "field"}) takes the next blank row of the header table, top to bottom. An entry is
+    skipped when the table already carries a label for that field. Returns the label texts written."""
+    written = []
+    for part in doc.header_parts():
+        root = doc.tree(part)
+        for tbl in root.iter(q("tbl")):
+            rows = tbl.findall(q("tr"))
+            texts = [[ctext(c) for c in tr.findall(q("tc"))] for tr in rows]
+            if not any(norm_label(t) in labels_map["title"] for r in texts for t in r):
+                continue                      # not the header block (no "Project Title:" label)
+            blank = [tr for tr, r in zip(rows, texts)
+                     if len(r) >= 3 and not any(r) and not any((b.get(q("name")) or "") for b in tr.iter(q("bookmarkStart")))]
+            have = {norm_label(t) for r in texts for t in r}
+            for ex in extras:
+                if have & set(labels_map.get(ex["field"], [])) or norm_label(ex["label"]) in have:
+                    continue
+                if not blank:
+                    log.append(("WARN", "no blank header box left to label '%s'" % ex["label"]))
+                    continue
+                cells = blank.pop(0).findall(q("tc"))
+                lab_p, val_p = cells[1].findall(q("p")), cells[2].findall(q("p"))
+                if not lab_p or not val_p:
+                    log.append(("WARN", "blank header box has no paragraph to label '%s'" % ex["label"]))
+                    continue
+                write_paragraph(lab_p[0], ex["label"], "none")
+                value = values.get(ex["field"])
+                if value:
+                    write_paragraph(val_p[0], value, "none")
+                else:
+                    log.append(("INFO", "header box '%s' labelled but left blank: the input sheet has no value for it" % ex["label"]))
+                doc.changed.add(part)
+                doc.touched.append((part, "header label '%s'" % ex["label"]))
+                written.append(ex["label"])
+    return written
+
+def fill_dm(doc, values, log):
+    """Fill the workpack master: cover text boxes, cover table, revision cell and the page header. Never overwrites typed text."""
+    root = doc.tree(doc.main)
+    done = 0
+    for p in list(root.iter(q("p"))):
+        if p.find(".//" + q("p")) is not None or any(a.tag == q("tbl") for a in p.iterancestors()):
+            continue                              # a paragraph that holds text boxes, or a table cell: handled elsewhere
+        text = ptext(p).strip()
+        key = DM_COVER_LABELS.get(norm_label(text))
+        if key and values.get(key):
+            new_run(p, str(values[key]))
+            done += 1
+        elif text in DM_COVER_PLACEHOLDERS and values.get(DM_COVER_PLACEHOLDERS[text]):
+            replace_in_paragraph(p, text, str(values[DM_COVER_PLACEHOLDERS[text]]))
+            done += 1
+    tables = top_tables(root)
+    if not tables:
+        raise FillError("the workpack master has no cover table")
+    for row, lab, key in DM_COVER_TABLE:
+        tc = get_cell(tables[0], row, 0)
+        if not norm_label(ctext(tc)).startswith(lab):
+            raise FillError("label check failed on the cover table: expected '%s' in row %d, found '%s'" % (lab, row, ctext(tc)[:30]))
+        if values.get(key):
+            p = tc.findall(q("p"))[0]
+            new_run(p, str(values[key]))
+            done += 1
+    row, col, key = DM_REV_CELL
+    if values.get(key):
+        write_paragraph(get_cell(tables[0], row, col).findall(q("p"))[0], str(values[key]), "none")
+        done += 1
+    if done:
+        doc.changed.add(doc.main)
+        doc.touched.append((doc.main, "cover and revision values"))
+    seen = set()
+    for part in doc.header_parts():
+        hroot = doc.tree(part)
+        for tbl in hroot.iter(q("tbl")):
+            for tr in tbl.findall(q("tr")):
+                cells = tr.findall(q("tc"))
+                if len(cells) < 2:
+                    continue
+                key = DM_HEADER.get(norm_label(ctext(cells[0])))
+                if key and values.get(key):
+                    ps = cells[1].findall(q("p"))
+                    if ps:
+                        write_paragraph(ps[0], str(values[key]), "none")
+                        seen.add(key)
+                        doc.changed.add(part)
+                        doc.touched.append((part, "header " + key))
+    if not seen and not done:
+        log.append(("WARN", "nothing was filled in the workpack master: check the Project sheet values"))
 
 def fill_body(doc, form, values, log):
     root = doc.tree(doc.main)
@@ -547,10 +944,15 @@ PROJECT_FIELDS = [
     ("handover_includes", "Handover includes (SH1 / MC1)", "One line per line of text; blank lines are kept"),
     ("handover_excludes", "Handover excludes (SH1)", "e.g. N/A"),
     ("ee12_description", "Standard description of tests (EE12)", "Used for every EE12 unless the certificate row has its own. A line containing only [TAGS] marks where the tag table goes"),
+    ("nmc_cchp", "NMC CCHP number", "Workpack master (DM) only: page header, NMC CCHP No. Blank = left blank"),
+    ("revision", "Revision", "Workpack master (DM) only: cover, page header and revision table, e.g. B1. Blank = left blank"),
+    ("cover_title", "Cover title", "Workpack master (DM) only: the title on the cover page. Blank = the project title"),
+    ("jre", "Responsible engineer (JRE)", "CCHP checklist (C1) only: Responsible Engineering (JRE). Blank = left blank"),
+    ("cchp_title", "CCHP checklist title", "CCHP checklist (C1) only: Title. Blank = the project title"),
 ]
 CERT_COLUMNS = [
     ("id", "ID", "A short unique name for this certificate, e.g. AS1-PL33000"),
-    ("form", "Form", "AS1, EE12, SC1, SL1, MP1, JI1, SH1, MC1, PL1 A, PL1 B (others: header only)"),
+    ("form", "Form", "C1, DM, AS1, EE12, SC1, SL1, MP1, JI1, SH1, MC1, PL1 A, PL1 B (others: header only)"),
     ("filename", "Output file name (optional)", "Without .docx. Blank = '<Form> <ID>'"),
     ("equipment", "Equipment / line", "EQUIPMENT cell"),
     ("location", "Location", "Blank = default location"),
@@ -565,6 +967,10 @@ CERT_COLUMNS = [
     ("punch_no", "Punch list number", "PL1 only (header)"),
     ("discipline", "Discipline", "PL1 only (header)"),
     ("folder", "Output folder (optional)", "Blank = standard section folder for the form"),
+    ("sl1a", "SL1A request no", "SL1 only: replaces SL1A-XX-XXXXX in SCOPE OF TEST, e.g. SL1A-BB-12436. Blank leaves the template text"),
+    ("hdr_title", "Header: project title", "This certificate's header only. Blank = the project title"),
+    ("hdr_site", "Header: site", "This certificate's header only. Blank = the project site"),
+    ("hdr_mc1", "Header: MC1 number", "This certificate's header only. Blank = the project MC1 number"),
 ]
 LINE_COLUMNS = [("cert", "Certificate ID", "Must match an ID on the Certificates sheet (SL1 or MP1 rows)"),
                 ("pid", "P&ID No / ISO No", "SL1: P&ID No. MP1: ISO No"),
@@ -579,19 +985,25 @@ def make_sheet(path):
     if openpyxl is None:
         raise FillError("openpyxl is required")
     wb = openpyxl.Workbook()
-    head = PatternFill("solid", fgColor="1F4E79")
+    head = PatternFill("solid", fgColor=BRAND_BLUE)       # NMC Energy accent blue (nmcenergy.com)
     note = PatternFill("solid", fgColor="EAF1FB")
     ws = wb.active
     ws.title = "Read me"
-    lines = ["Workpack input sheet", "",
+    lines = ["NMC Energy: Workpack input sheet", "",
              "Fill the Project sheet once, then one row per certificate on the Certificates sheet.",
              "Lines (SL1 / MP1) and Tags (EE12) go on their own sheets and point at a certificate ID.",
              "Leave a cell blank to leave that cell blank on the form. Signatures, dates, YES/NO answers and test results are never filled.",
              "Type values exactly as they should appear (for example one style of inch mark in line numbers).",
              "Then run the Workpack Filler. It writes filled copies of the blank templates to a separate output folder.",
-             "The blank templates are never changed."]
+             "The blank templates are never changed.",
+             "", "Workpack Tools v%s   |   nmcenergy.com" % VERSION]
     for i, l in enumerate(lines, 1):
-        ws.cell(i, 1, l).font = Font(bold=(i == 1), size=14 if i == 1 else 11)
+        if i == 1:
+            ws.cell(i, 1, l).font = Font(bold=True, size=16, color=BRAND_DARK)
+        elif i == len(lines):
+            ws.cell(i, 1, l).font = Font(size=9, color=BRAND_BLUE)
+        else:
+            ws.cell(i, 1, l).font = Font(size=11)
     ws.column_dimensions["A"].width = 120
     ws = wb.create_sheet("Project")
     for c, h in enumerate(("Field", "Value", "Where it is used"), 1):
@@ -609,7 +1021,7 @@ def make_sheet(path):
         ws.column_dimensions[openpyxl.utils.get_column_letter(c)].width = 24
     ws.row_dimensions[2].height = 52
     ws.freeze_panes = "C3"
-    dv = DataValidation(type="list", formula1='"AS1,EE12,SC1,SL1,MP1,JI1,SH1,MC1,PL1 A,PL1 B"', allow_blank=True, showErrorMessage=False)
+    dv = DataValidation(type="list", formula1='"C1,DM,AS1,EE12,SC1,SL1,MP1,JI1,SH1,MC1,PL1 A,PL1 B"', allow_blank=True, showErrorMessage=False)
     ws.add_data_validation(dv); dv.add("B3:B200")
     for name, cols in (("Lines", LINE_COLUMNS), ("Joints", JOINT_COLUMNS), ("Tags", TAG_COLUMNS)):
         ws = wb.create_sheet(name)
@@ -688,8 +1100,10 @@ def read_sheet(path):
 # =========================================================================== driver
 def values_for(cert, project):
     v = {}
-    v["title"] = project.get("title"); v["project_no"] = project.get("project_no")
-    v["workpack"] = project.get("workpack"); v["sh1"] = project.get("sh1"); v["mc1"] = project.get("mc1"); v["site"] = project.get("site")
+    v["title"] = cert.get("hdr_title") or project.get("title"); v["project_no"] = project.get("project_no")
+    v["workpack"] = project.get("workpack"); v["sh1"] = project.get("sh1"); v["mc1"] = cert.get("hdr_mc1") or project.get("mc1")
+    v["site"] = cert.get("hdr_site") or project.get("site")
+    v["sl1a"] = cert.get("sl1a")
     v["punch_no"] = cert.get("punch_no"); v["discipline"] = cert.get("discipline")
     v["location"] = cert.get("location") or project.get("location")
     v["hdr_location"] = cert.get("location") or project.get("location")
@@ -697,6 +1111,10 @@ def values_for(cert, project):
     v["subsystem"] = cert.get("subsystem") or project.get("subsystem")
     for k in ("equipment", "area", "drawing", "description", "scope", "procedure"):
         v[k] = cert.get(k)
+    v["nmc_cchp"] = project.get("nmc_cchp"); v["revision"] = project.get("revision")
+    v["cover_title"] = project.get("cover_title") or project.get("title")
+    v["jre"] = project.get("jre")
+    v["cchp_title"] = project.get("cchp_title") or project.get("title")
     v["handover_title"] = project.get("handover_title") or project.get("title")
     v["handover_includes"] = project.get("handover_includes")
     v["handover_excludes"] = project.get("handover_excludes")
@@ -709,9 +1127,12 @@ def inside(path, folder):
     p, f = os.path.normcase(os.path.abspath(path)), os.path.normcase(os.path.abspath(folder))
     return p == f or p.startswith(f + os.sep)
 
-def run(input_path, tpl_dir, out_dir, overwrite=False, add_rows=False, spare_rows=None, report=print):
+def run(input_path, tpl_dir, out_dir, overwrite=False, add_rows=False, spare_rows=None, report=print, settings=None):
+    """spare_rows (a number) overrides the per-form spare_rows in the settings for every form."""
     if inside(out_dir, tpl_dir) or inside(tpl_dir, out_dir):
         raise FillError("the output folder must be separate from the templates folder (the templates are never written to)")
+    st = settings or load_settings(None)
+    labels = header_labels_for(st)
     data = read_sheet(input_path)
     project = data["project"]
     results, audit = [], []
@@ -722,8 +1143,10 @@ def run(input_path, tpl_dir, out_dir, overwrite=False, add_rows=False, spare_row
         if not tpl:
             results.append((cid, form, None, "FAILED", "no blank template found for form '%s'" % form))
             continue
-        folder = cert.get("folder") or SECTION.get(form, DEFAULT_SECTION)
-        name = cert.get("filename") or ("%s %s" % (form, cid))
+        folder = cert.get("folder") or st["output"]["folders"].get(form, st["output"]["default_folder"])
+        name = cert.get("filename") or st["output"]["file_name"].format(form=form, id=cid)
+        spare = spare_rows if spare_rows is not None else st["output"]["spare_rows"].get(form)
+        samples = st["template_sample_text"].get(form, [])
         out_path = os.path.join(out_dir, folder, re.sub(r'[<>:"/\\|?*]', "_", name) + ".docx")
         if os.path.exists(out_path) and not overwrite:
             results.append((cid, form, out_path, "SKIPPED", "output file already exists (use --overwrite)"))
@@ -731,22 +1154,30 @@ def run(input_path, tpl_dir, out_dir, overwrite=False, add_rows=False, spare_row
         try:
             doc = Doc(tpl)
             vals = values_for(cert, project)
-            filled = fill_header(doc, vals, log)
+            blank_samples(doc, form, samples, log)      # before anything is typed, so typed values are never blanked
+            if form == "DM":
+                fill_dm(doc, vals, log)
+                extra_labels = ()
+            else:
+                filled = fill_header(doc, vals, log, labels)
+                extras = st.get("header_extra_rows", {}).get(form, [])
+                extra_labels = fill_header_extra(doc, extras, vals, labels, log)
             fill_body(doc, form, vals, log)
+            fill_replace(doc, form, vals, log)
             sheet = ROW_TABLES[form][4].lower() if form in ROW_TABLES else "lines"
             rows = [r for r in data[sheet] if r["cert"] == cid]
-            fill_rows(doc, form, rows, add_rows, log, spare_rows)
+            fill_rows(doc, form, rows, add_rows, log, spare)
             if form == "EE12":
                 tags = [r for r in data["tags"] if r["cert"] == cid]
                 fill_ee12_block(doc, cert.get("ee12_description") or project.get("ee12_description"), tags, log)
             elif rows and form not in ROW_TABLES:
                 log.append(("WARN", "line rows ignored for form %s" % form))
-            if form not in BODY_FIELDS and form not in ("PL1 A", "PL1 B"):
+            if form not in BODY_FIELDS and form not in ("PL1 A", "PL1 B", "DM"):
                 log.append(("INFO", "form %s: only the header block is filled (body fields are not mapped yet)" % form))
             doc.save(out_path)
             doc.zin.close()
             # prove only intended places changed
-            problems = self_check(tpl, out_path, doc, vals, form, rows, cert, project, spare_rows)
+            problems = self_check(tpl, out_path, doc, vals, form, rows, cert, project, spare, samples, extra_labels)
             status = "OK" if not problems else "CHECK FAILED"
             note = "; ".join(m for _, m in log) if log else ""
             if problems:
@@ -759,7 +1190,7 @@ def run(input_path, tpl_dir, out_dir, overwrite=False, add_rows=False, spare_row
             results.append((cid, form, None, "FAILED", str(e)))
     return results, audit
 
-def self_check(tpl, out_path, doc, vals, form, rows, cert, project, spare_rows=None):
+def self_check(tpl, out_path, doc, vals, form, rows, cert, project, spare_rows=None, samples=(), extra_labels=()):
     """Compare template and output cell by cell. Only cells the tool was asked to fill may differ."""
     problems = []
     zt, zo = zipfile.ZipFile(tpl), zipfile.ZipFile(out_path)
@@ -777,6 +1208,21 @@ def self_check(tpl, out_path, doc, vals, form, rows, cert, project, spare_rows=N
     tables = None
     for key, (ti, ri, ci), _, slot in BODY_FIELDS.get(form, []):
         allowed_body.add("t%d r%d c%d" % (ti, ri, ci))
+    for key, (ti, ri, ci), _, token in BODY_REPLACE.get(form, []):
+        allowed_body.add("t%d r%d c%d" % (ti, ri, ci))
+    if form == "DM":
+        allowed_body |= DM_BODY_CELLS
+        def loose_paras(data):                  # paragraphs outside tables that hold no text box (cover text boxes live there)
+            r_ = etree.fromstring(data)
+            return [ptext(p) for p in r_.iter(q("p")) if p.find(".//" + q("p")) is None and not any(a.tag == q("tbl") for a in p.iterancestors())]
+        pa, pb = loose_paras(zt.read(main)), loose_paras(zo.read(main))
+        if len(pa) != len(pb):
+            problems.append("the number of body paragraphs changed")
+        else:
+            meant = {str(v) for v in vals.values() if v}
+            for x, y in zip(pa, pb):
+                if x != y and not any(y == x + v or y == x.replace("[SITE]", v).replace("[PROJECT TITLE]", v) for v in meant):
+                    problems.append("unexpected change in cover text: '%s'" % y[:40])
     if form in ROW_TABLES:
         ti, first, cols, _, _ = ROW_TABLES[form]
         for r in range(first, first + 60):
@@ -807,6 +1253,12 @@ def self_check(tpl, out_path, doc, vals, form, rows, cert, project, spare_rows=N
                         continue          # a trailing blank template row was removed on request
                     problems.append("a removed row held text at %s" % k)
                     continue
+            if n == main and samples and k in a and k in b:
+                bare = a[k]
+                for s_ in samples:
+                    bare = bare.replace(s_, "")
+                if re.sub(r"\s+", "", bare) == re.sub(r"\s+", "", b[k]):
+                    continue          # only configured template sample text was blanked in this cell
             if n == main:
                 ok = k in allowed_body or (form == "EE12" and k.startswith("t1 r0 c0")) or ("t1 r0 c0" in k and form == "EE12")
                 if not ok:
@@ -814,28 +1266,65 @@ def self_check(tpl, out_path, doc, vals, form, rows, cert, project, spare_rows=N
             else:
                 # header: the new text must equal one of the values we meant to write
                 new = (b.get(k) or "").replace(a.get(k) or "", "", 1).strip()
+                if new in extra_labels and not (a.get(k) or "").strip():
+                    continue          # a label written into a header box that was blank in the template (header_extra_rows)
                 if new and not any(new == str(v) for v in vals.values() if v):
                     problems.append("unexpected header text '%s' at %s" % (new[:30], k))
-        names = lambda data: sorted((x.get(q("id")), x.get(q("name"))) for x in etree.fromstring(data).iter(q("bookmarkStart")))
+        # _GoBack is the hidden bookmark Word keeps for "return to last edit"; trimming a row may legitimately drop it
+        names = lambda data: sorted((x.get(q("id")), x.get(q("name"))) for x in etree.fromstring(data).iter(q("bookmarkStart")) if x.get(q("name")) != "_GoBack")
         if names(zt.read(n)) != names(zo.read(n)):
             problems.append("bookmarks changed in %s" % n)
     return problems
 
-def write_logs(out_dir, results, audit, project):
+def write_logs(out_dir, results, audit, project, tpl_dir=None):
+    """Write fill-log.csv and fill-audit.csv. With tpl_dir, the log also names the template used for each form and
+    whether it matches the version bundled with the tool. Returns the template check results {template name: check}."""
     os.makedirs(out_dir, exist_ok=True)
+    manifest, cache, seen = (load_template_manifest() if tpl_dir else {}), {}, {}
+    originals = load_template_originals() if tpl_dir else {}
     with open(os.path.join(out_dir, "fill-log.csv"), "w", newline="", encoding="utf-8-sig") as fh:
         w = csv.writer(fh)
-        w.writerow(["certificate ID", "form", "output file", "status", "notes"])
+        w.writerow(["certificate ID", "form", "output file", "status", "notes", "template", "template check", "tool version"])
         for cid, form, path, status, note in results:
-            w.writerow([cid, form, os.path.relpath(path, out_dir) if path else "", status, note])
+            tpl = find_template(tpl_dir, form) if tpl_dir else None
+            check = template_check(tpl, manifest, cache, originals) if tpl else ""
+            if tpl:
+                seen[os.path.basename(tpl)] = check
+            w.writerow([cid, form, os.path.relpath(path, out_dir) if path else "", status, note, os.path.basename(tpl) if tpl else "", check, VERSION])
     with open(os.path.join(out_dir, "fill-audit.csv"), "w", newline="", encoding="utf-8-sig") as fh:
         w = csv.writer(fh)
         w.writerow(["certificate ID", "form", "output file", "what was filled"])
         w.writerows(audit)
+    return seen
 
 # =========================================================================== command line
-def gui_pick():
-    """File / folder pickers for people who do not use the command line."""
+# Remembers the folders last used in the pickers, so people start where they left off.
+STATE_FILE = os.path.join(os.environ.get("LOCALAPPDATA") or os.path.expanduser("~"), "WorkpackTools", "last_used.json")
+GUI_TITLE = "NMC Workpack Tools"
+
+def load_state():
+    try:
+        with open(STATE_FILE, encoding="utf-8") as fh:
+            data = json.load(fh)
+        return data if isinstance(data, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+def save_state(**kw):
+    """Best effort: a failure to remember folders must never stop the tool."""
+    try:
+        state = load_state()
+        state.update({k: v for k, v in kw.items() if v})
+        os.makedirs(os.path.dirname(STATE_FILE), exist_ok=True)
+        with open(STATE_FILE, "w", encoding="utf-8") as fh:
+            json.dump(state, fh)
+    except OSError:
+        pass
+
+def gui_pick(bundled=False):
+    """File / folder pickers for people who do not use the command line.
+    With bundled=True the blank templates that come with the tool are used, so that step is skipped."""
+    steps = 2 if bundled else 3
     import tkinter as tk
     from tkinter import filedialog, messagebox
     root = tk.Tk()
@@ -844,23 +1333,25 @@ def gui_pick():
         root.attributes("-topmost", True)
     except Exception:
         pass
-    messagebox.showinfo("Workpack filler", "Step 1 of 3: choose the INPUT WORKBOOK (the filled-in input sheet)." + chr(10) + chr(10) + "The blank templates are never changed. Filled copies are written to a separate folder.")
-    inp = filedialog.askopenfilename(title="Choose the input workbook", filetypes=[("Excel workbook", "*.xlsx")])
+    state = load_state()
+    messagebox.showinfo(GUI_TITLE, "Step 1 of %d: choose the INPUT WORKBOOK (the filled-in input sheet)." % steps + chr(10) + chr(10) + ("The blank Apache templates that come with this tool are used. " if bundled else "") + "The blank templates are never changed. Filled copies are written to a separate folder.")
+    inp = filedialog.askopenfilename(title="Choose the input workbook", filetypes=[("Excel workbook", "*.xlsx")], initialdir=state.get("input_dir") if os.path.isdir(state.get("input_dir") or "") else None)
     if not inp:
         root.destroy()
         return None
-    tpl = filedialog.askdirectory(title="Step 2 of 3: choose the BLANK TEMPLATES folder (ANS-TI-019)")
-    if not tpl:
-        root.destroy()
-        return None
-    out = filedialog.askdirectory(title="Step 3 of 3: choose (or create) the OUTPUT folder for the filled forms")
+    tpl = None
+    if not bundled:
+        tpl = filedialog.askdirectory(title="Step 2 of 3: choose the BLANK TEMPLATES folder (ANS-TI-019)", initialdir=state.get("templates_dir") if os.path.isdir(state.get("templates_dir") or "") else None)
+        if not tpl:
+            root.destroy()
+            return None
+    out_start = state.get("output_dir") if os.path.isdir(state.get("output_dir") or "") else os.path.dirname(inp)
+    out = filedialog.askdirectory(title="Step %d of %d: choose (or create) the OUTPUT folder for the filled forms" % (steps, steps), initialdir=out_start)
     if not out:
         root.destroy()
         return None
-    validate = messagebox.askyesno("Check afterwards", "Run the validator on the filled forms when finished? (recommended)")
-    spare = 4 if messagebox.askyesno("Table rows", "Delete unused blank rows in the line and joint tables, keeping 4 spare rows?" + chr(10) + chr(10) + "Choose No to leave the template's rows exactly as they are.") else None
     root.destroy()
-    return inp, tpl, out, validate, spare
+    return inp, tpl, out
 
 def gui_finish(out, results):
     try:
@@ -874,7 +1365,7 @@ def gui_finish(out, results):
         msg = "%d form(s) written to:" % ok + chr(10) + out
         if bad:
             msg += chr(10) + chr(10) + "%d problem(s):" % len(bad) + chr(10) + chr(10).join("  %s (%s): %s" % (r[0], r[1], r[4][:80]) for r in bad[:6])
-        messagebox.showinfo("Workpack filler", msg)
+        messagebox.showinfo(GUI_TITLE, msg)
         root.destroy()
         os.startfile(out)
     except Exception:
@@ -883,13 +1374,13 @@ def gui_finish(out, results):
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("input", nargs="?")
-    ap.add_argument("--templates")
+    ap.add_argument("--templates", help="blank templates folder (default: the templates folder that comes with this tool)")
     ap.add_argument("--out")
     ap.add_argument("--make-sheet", metavar="PATH")
     ap.add_argument("--overwrite", action="store_true")
     ap.add_argument("--add-rows", action="store_true", help="add table rows when there are more line/joint rows than the template has")
     ap.add_argument("--spare-rows", type=int, metavar="N", help="delete unused blank rows in line/joint tables, keeping N spare rows (keeps the form to one page)")
-    ap.add_argument("--validate", action="store_true", help="run the workpack validator on the output afterwards")
+    ap.add_argument("--settings", metavar="FILE", help="settings file (default: %s next to this tool, if it exists)" % SETTINGS_FILE)
     ap.add_argument("--no-open", action="store_true")
     a = ap.parse_args(argv)
     if a.make_sheet:
@@ -899,45 +1390,46 @@ def main(argv=None):
         make_sheet(a.make_sheet)
         print("Created blank input workbook: %s" % a.make_sheet)
         return 0
-    gui = False
-    if not a.input:
-        picked = gui_pick()
-        if not picked:
-            print("Cancelled. Nothing was done.")
-            return 0
-        a.input, a.templates, a.out, a.validate, a.spare_rows = picked
-        gui = True
-    if not (a.templates and a.out):
-        print("Both --templates and --out are needed.")
-        return 2
     try:
-        results, audit = run(a.input, a.templates, a.out, overwrite=a.overwrite, add_rows=a.add_rows, spare_rows=a.spare_rows)
+        settings = load_settings(a.settings or default_settings_path())
     except FillError as e:
         print("Stopped: %s" % e)
         return 2
-    write_logs(a.out, results, audit, None)
+    gui = False
+    bundled = default_templates_dir()
+    if not a.input:
+        picked = gui_pick(bundled=bool(bundled))
+        if not picked:
+            print("Cancelled. Nothing was done.")
+            return 0
+        a.input, a.templates, a.out = picked
+        gui = True
+    if not a.templates:
+        a.templates = bundled
+    if not a.templates:
+        print("No blank templates found. Use --templates <folder>, or put the templates in: %s" % BUNDLED_TEMPLATES)
+        return 2
+    if not a.out:
+        print("--out <output folder> is needed.")
+        return 2
+    try:
+        results, audit = run(a.input, a.templates, a.out, overwrite=a.overwrite, add_rows=a.add_rows, spare_rows=a.spare_rows, settings=settings)
+    except FillError as e:
+        print("Stopped: %s" % e)
+        return 2
+    checks = write_logs(a.out, results, audit, None, tpl_dir=a.templates)
     bad = [r for r in results if r[3] not in ("OK",)]
-    print("Workpack filler (templates are never modified)")
+    print("NMC Energy | Workpack Tools v%s: form filler (templates are never modified)" % VERSION)
+    print("Templates: %s" % (("the set that comes with this tool (%s)" % a.templates) if os.path.normcase(os.path.abspath(a.templates)) == os.path.normcase(BUNDLED_TEMPLATES) else a.templates))
+    print("Settings: %s" %(("%s (%s)" % (settings["profile"], settings["_path"])) if settings["_path"] else "built-in defaults (no settings file)"))
     for cid, form, path, status, note in results:
         print("  [%s] %-8s %-24s %s" % (status, form, cid, (os.path.relpath(path, a.out) if path else "") + (("  -- " + note) if note else "")))
     print(chr(10) + "%d form(s) written, %d problem(s). Log: %s" % (sum(1 for r in results if r[3] == "OK"), len(bad), os.path.join(a.out, "fill-log.csv")))
-    if a.validate and any(r[3] == "OK" for r in results):
-        try:
-            import validate_workpack as V
-            proj = read_sheet(a.input)["project"]
-            vargs = [a.out, "--templates", a.templates, "--out", os.path.join(a.out, "_validation"), "--no-open"]
-            for flag, key in (("--ref-sh1", "sh1"), ("--ref-workpack", "workpack"), ("--ref-fcp", "project_no")):
-                if proj.get(key):
-                    vargs += [flag, proj[key]]
-            print(chr(10) + "Running the validator on the filled forms...")
-            V.findings.clear()
-            vcode = V.main(vargs)
-            print("Validation report: %s" % os.path.join(a.out, "_validation", "report.html"))
-            if vcode:
-                bad.append(("validator", "", None, "ERRORS", "the validator found errors in the filled forms"))
-        except ImportError:
-            print("validate_workpack.py was not found next to this tool; skipping validation.")
+    differ = sorted(n for n, c in checks.items() if c == "DIFFERS from bundled")
+    if differ:
+        print("NOTE: %s differ%s from the version that comes with this tool (a newer revision, or the file was changed). The forms were still filled; check you are using the revision you intend." % (", ".join(differ), "s" if len(differ) == 1 else ""))
     if gui:
+        save_state(input_dir=os.path.dirname(os.path.abspath(a.input)), output_dir=os.path.dirname(os.path.abspath(a.out)))
         gui_finish(a.out, results)
     return 1 if bad else 0
 
