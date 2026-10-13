@@ -61,3 +61,24 @@
 .wp details.more summary { cursor: pointer; font-weight: 700; padding: 8px 0; }
 .wp details.more summary:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
 .wp details.more .panel { margin-top: 6px; }
+
+
+/* table editor */
+.wp .tablelink { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+.wp .gridwrap { overflow-x: auto; border: 1px solid var(--ink); background: #fff; }
+.wp table.gridedit { border: 0; table-layout: auto; counter-reset: gridrow; }
+.wp .gridedit th small { display: block; margin-top: 2px; font-size: 11px; font-weight: 400; text-transform: none;
+                         letter-spacing: 0; color: var(--muted); }
+.wp .gridedit td { padding: 0; border-right: 1px solid var(--line); }
+.wp .gridedit td.rn, .wp .gridedit th.rn { width: 44px; padding: 0 10px; text-align: right; color: var(--muted);
+                                          background: var(--hover); border-right: 1px solid var(--ink); }
+.wp .gridedit tbody tr { counter-increment: gridrow; }
+.wp .gridedit td.rn::before { content: counter(gridrow); font-variant-numeric: tabular-nums; line-height: 38px; }
+.wp .gridedit td input { width: 100%; min-width: 130px; padding: 9px 10px; border: 0; background: transparent; }
+.wp .gridedit td input:focus { outline: 3px solid var(--accent); outline-offset: -3px; background: #fff7f0; }
+.wp .gridedit td.rm, .wp .gridedit th.rm { width: 40px; border-right: 0; text-align: center; }
+.wp .rmbtn { width: 100%; height: 38px; border: 0; background: transparent; color: var(--muted); font-size: 18px; cursor: pointer; }
+.wp .rmbtn:hover { background: var(--ink); color: #fff; }
+.wp .rmbtn:focus-visible { outline: 3px solid var(--accent); outline-offset: -3px; }
+.wp .gridtools { margin: 12px 0; display: flex; gap: 12px; align-items: center; }
+.wp #rows-status { color: var(--muted); font-size: 13px; }

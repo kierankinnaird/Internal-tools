@@ -35,6 +35,12 @@
     <div class="hint">Changing the form changes which details appear below once you save.</div></div>
 </div></div>
 
+{% if table %}
+<h2>{{ table.title }}</h2>
+<div class="panel tablelink"><span><b>{{ table.count }}</b> saved for this certificate</span>
+  <a class="btn" href="{{ url_for('workpacks.rows', cert_pk=cert.id) }}">{{ 'Edit' if can_edit else 'View' }} {{ table.title|lower }}</a></div>
+{% endif %}
+
 <h2>Details for {{ cert.form }}</h2>
 <div class="panel">
   {% if sections.details %}<div class="grid">{% for f in sections.details %}{{ field(f, can_edit) }}{% endfor %}</div>

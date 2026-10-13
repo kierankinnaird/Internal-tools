@@ -6,7 +6,7 @@ from flask import Blueprint, abort, redirect, render_template, request, url_for
 
 from core.context import Context
 
-from . import certfields
+from . import certfields, rowtables
 from .fields import CERTIFICATE_FIELDS, ROW_KIND_BY_FORM, WORKPACK_FIELDS
 from .forms import form_codes
 from .repo import Repo
@@ -163,7 +163,12 @@ def create_blueprint(ctx: Context) -> Blueprint:
                     for name, cols in certfields.sections(cert["form"]).items()}
         siblings = repo.list_certificates(wp["id"])
         at = next(i for i, c in enumerate(siblings) if c["id"] == cert_pk)
-        return render_template("workpacks/certificate.html", wp=wp, cert=cert, sections=sections,
+        kind = rowtables.kind_for(cert["form"])
+        table = None
+        if kind:
+            n = len(repo.get_rows(cert_pk, kind))
+            table = {"title": rowtables.TITLES[kind], "count": rowtables.count_text(kind, n)}
+        return render_template("workpacks/certificate.html", wp=wp, cert=cert, sections=sections, table=table,
                                previous=siblings[at - 1] if at > 0 else None,
                                following=siblings[at + 1] if at + 1 < len(siblings) else None,
                                forms=form_codes(store.folder), error=request.args.get("error"),
@@ -181,6 +186,43 @@ def create_blueprint(ctx: Context) -> Blueprint:
         except ValueError as e:
             return redirect(url_for("workpacks.certificate", cert_pk=cert_pk, error=str(e)))
         return redirect(url_for("workpacks.certificate", cert_pk=cert_pk, saved=1))
+
+    # ---- table rows (lines, joints, tags) ------------------------------------------------------
+    def table_or_redirect(cert_pk):
+        """The certificate and its row kind, or None and a redirect when the form has no table."""
+        cert = cert_or_404(cert_pk)
+        kind = rowtables.kind_for(cert["form"])
+        if kind:
+            return cert, kind, None
+        return cert, None, redirect(url_for("workpacks.certificate", cert_pk=cert_pk,
+                                            error=f"The {cert['form']} form has no table rows"))
+
+    @bp.get("/certificates/<int:cert_pk>/rows")
+    def rows(cert_pk):
+        need("workpacks.view")
+        cert, kind, refused = table_or_redirect(cert_pk)
+        if refused:
+            return refused
+        can_edit = ctx.can("workpacks.edit")
+        return render_template("workpacks/rows.html", wp=wp_or_404(cert["workpack_id"]), cert=cert, kind=kind,
+                               title=rowtables.TITLES[kind], note=rowtables.NOTES.get(kind, ""),
+                               columns=rowtables.columns(kind), rows=repo.get_rows(cert_pk, kind),
+                               blank=rowtables.BLANK_ROWS if can_edit else 0, can_edit=can_edit,
+                               saved=request.args.get("saved", type=int), error=request.args.get("error"),
+                               count_text=rowtables.count_text)
+
+    @bp.post("/certificates/<int:cert_pk>/rows")
+    def save_rows(cert_pk):
+        need("workpacks.edit")
+        cert, kind, refused = table_or_redirect(cert_pk)
+        if refused:
+            return refused
+        try:
+            names = [c["name"] for c in rowtables.columns(kind)]
+            saved = repo.replace_rows(cert_pk, kind, rowtables.parse_rows(request.form, names), ctx.current_user())
+        except ValueError as e:
+            return redirect(url_for("workpacks.rows", cert_pk=cert_pk, error=str(e)))
+        return redirect(url_for("workpacks.rows", cert_pk=cert_pk, saved=saved))
 
     @bp.post("/certificates/<int:cert_pk>/duplicate")
     def duplicate_certificate(cert_pk):

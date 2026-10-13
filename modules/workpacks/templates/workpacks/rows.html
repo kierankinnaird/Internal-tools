@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block title %}{{ title }} {{ cert.cert_id }}{% endblock %}
+{% block head %}<link rel="stylesheet" href="{{ url_for('workpacks.static', filename='workpacks.css') }}">{% endblock %}
+{% macro cells(columns, values) %}{% for c in columns %}<td><input name="{{ c.name }}" value="{{ values[c.name] if values else '' }}" autocomplete="off" aria-label="{{ c.label }}"></td>{% endfor %}{% endmacro %}
+{% block content %}
+<div class="wp">
+<div class="crumbs"><a href="{{ url_for('workpacks.index') }}">Workpacks</a> /
+  <a href="{{ url_for('workpacks.workpack', wp_id=wp.id) }}#certificates">{{ wp.title }}</a> /
+  <a href="{{ url_for('workpacks.certificate', cert_pk=cert.id) }}">{{ cert.cert_id }}</a> / {{ title }}</div>
+<h1>{{ title }} for {{ cert.form }} {{ cert.cert_id }}</h1>
+{% if can_edit %}<p class="lede">Click a cell and paste from Excel: rows and columns land where you click, and rows are added as needed. Empty rows are not saved.</p>{% endif %}
+{% if note %}<p class="note">{{ note }}</p>{% endif %}
+
+{% if saved is not none %}<div class="banner ok" role="status"><strong>Saved {{ count_text(kind, saved) }}.</strong></div>{% endif %}
+{% if error %}<div class="banner warn" role="alert"><strong>{{ error }}</strong></div>{% endif %}
+
+<form method="post" id="rows-form" action="{{ url_for('workpacks.save_rows', cert_pk=cert.id) }}"{% if not can_edit %} data-readonly="1"{% endif %}>
+  <input type="hidden" name="table" value="1">
+  <div class="gridwrap">
+    <table class="gridedit">
+      <thead><tr><th class="rn">#</th>
+        {% for c in columns %}<th data-col="{{ c.name }}"{% if c.hint %} title="{{ c.hint }}"{% endif %}>{{ c.label }}{% if c.hint %}<small>{{ c.hint }}</small>{% endif %}</th>{% endfor %}
+        {% if can_edit %}<th class="rm"></th>{% endif %}</tr></thead>
+      <tbody>
+        {% for r in rows %}<tr><td class="rn"></td>{{ cells(columns, r) }}{% if can_edit %}<td class="rm"><button type="button" class="rmbtn" aria-label="Remove this row">&times;</button></td>{% endif %}</tr>{% endfor %}
+        {% for i in range(blank) %}<tr><td class="rn"></td>{{ cells(columns, none) }}<td class="rm"><button type="button" class="rmbtn" aria-label="Remove this row">&times;</button></td></tr>{% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% if can_edit %}
+  <template id="row-template"><tr><td class="rn"></td>{{ cells(columns, none) }}<td class="rm"><button type="button" class="rmbtn" aria-label="Remove this row">&times;</button></td></tr></template>
+  <p class="gridtools"><button type="button" class="btn" id="add-rows">Add 5 rows</button> <span id="rows-status" aria-live="polite"></span></p>
+  <p><button class="btn primary" type="submit">Save {{ title|lower }}</button>
+    <a class="btn" href="{{ url_for('workpacks.certificate', cert_pk=cert.id) }}">Back to the certificate</a></p>
+  {% else %}
+  <p><a class="btn" href="{{ url_for('workpacks.certificate', cert_pk=cert.id) }}">Back to the certificate</a></p>
+  {% endif %}
+</form>
+</div>
+{% endblock %}
+{% block scripts %}<script src="{{ url_for('workpacks.static', filename='rows.js') }}"></script>{% endblock %}
