@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+{% block title %}{{ cert.cert_id }}{% endblock %}
+{% block head %}<link rel="stylesheet" href="{{ url_for('workpacks.static', filename='workpacks.css') }}">{% endblock %}
+{% macro field(f, can_edit) %}
+<div{% if f.textarea %} class="wide"{% endif %}><label for="f_{{ f.name }}">{{ f.label }}</label>
+  {% if f.textarea %}<textarea id="f_{{ f.name }}" name="{{ f.name }}" rows="4"{% if not can_edit %} readonly{% endif %}>{{ f.value }}</textarea>
+  {% else %}<input id="f_{{ f.name }}" name="{{ f.name }}" value="{{ f.value }}" autocomplete="off"{% if not can_edit %} readonly{% endif %}>{% endif %}
+  {% if f.hint %}<div class="hint">{{ f.hint }}</div>{% endif %}
+</div>
+{% endmacro %}
+{% block content %}
+<div class="wp">
+<div class="crumbs"><a href="{{ url_for('workpacks.index') }}">Workpacks</a> /
+  <a href="{{ url_for('workpacks.workpack', wp_id=wp.id) }}#certificates">{{ wp.title }}</a> / {{ cert.cert_id }}</div>
+<h1>{{ cert.form }} {{ cert.cert_id }}</h1>
+
+<div class="stepper">
+  {% if previous %}<a class="btn" href="{{ url_for('workpacks.certificate', cert_pk=previous.id) }}">&larr; {{ previous.cert_id }}</a>{% else %}<span></span>{% endif %}
+  {% if following %}<a class="btn" href="{{ url_for('workpacks.certificate', cert_pk=following.id) }}">{{ following.cert_id }} &rarr;</a>{% endif %}
+</div>
+
+{% if saved %}<div class="banner ok" role="status"><strong>Saved.</strong></div>{% endif %}
+{% if error %}<div class="banner warn" role="alert"><strong>{{ error }}</strong></div>{% endif %}
+
+{% if can_edit %}<form method="post" action="{{ url_for('workpacks.update_certificate', cert_pk=cert.id) }}">{% endif %}
+
+<h2>Certificate</h2>
+<div class="panel"><div class="grid">
+  <div><label for="f_cert_id">Certificate ID</label>
+    <input id="f_cert_id" name="cert_id" value="{{ cert.cert_id }}" required autocomplete="off"{% if not can_edit %} readonly{% endif %}>
+    <div class="hint">A short name, unique in this workpack.</div></div>
+  <div><label for="f_form">Form</label>
+    <input id="f_form" name="form" value="{{ cert.form }}" list="forms" required autocomplete="off"{% if not can_edit %} readonly{% endif %}>
+    <datalist id="forms">{% for f in forms %}<option value="{{ f }}">{% endfor %}</datalist>
+    <div class="hint">Changing the form changes which details appear below once you save.</div></div>
+</div></div>
+
+<h2>Details for {{ cert.form }}</h2>
+<div class="panel">
+  {% if sections.details %}<div class="grid">{% for f in sections.details %}{{ field(f, can_edit) }}{% endfor %}</div>
+  {% else %}<p class="note flat">The {{ cert.form }} form takes no details of its own. Everything it needs comes from the workpack and the header details below.</p>{% endif %}
+</div>
+
+<h2>Header and output file</h2>
+<div class="panel"><div class="grid">
+  {% for f in sections.header %}{{ field(f, can_edit) }}{% endfor %}
+  {% for f in sections.files %}{{ field(f, can_edit) }}{% endfor %}
+</div></div>
+
+{% if sections.other %}
+<details class="more">
+  <summary>Other fields (not used by {{ cert.form }})</summary>
+  <p class="note">Anything typed here is kept, in case the form is changed.</p>
+  <div class="panel"><div class="grid">{% for f in sections.other %}{{ field(f, can_edit) }}{% endfor %}</div></div>
+</details>
+{% endif %}
+
+{% if can_edit %}<p><button class="btn primary" type="submit">Save certificate</button>
+  <a class="btn" href="{{ url_for('workpacks.workpack', wp_id=wp.id) }}#certificates">Back to the workpack</a></p></form>{% endif %}
+</div>
+{% endblock %}

@@ -6,7 +6,8 @@ from flask import Blueprint, abort, redirect, render_template, request, url_for
 
 from core.context import Context
 
-from .fields import ROW_KIND_BY_FORM, WORKPACK_FIELDS
+from . import certfields
+from .fields import CERTIFICATE_FIELDS, ROW_KIND_BY_FORM, WORKPACK_FIELDS
 from .forms import form_codes
 from .repo import Repo
 from .store import TemplateStatus, TemplateStore, default_folder
@@ -67,6 +68,7 @@ def create_blueprint(ctx: Context) -> Blueprint:
     repo = Repo(ctx.data_dir / "workpacks.sqlite", audit=lambda a, d: ctx.audit("workpacks", a, d))
     store = TemplateStore(default_folder(ctx.data_dir))
     labels = dict(WORKPACK_FIELDS)
+    cert_labels = dict(CERTIFICATE_FIELDS)
 
     def need(perm):
         if not ctx.can(perm):
@@ -86,6 +88,10 @@ def create_blueprint(ctx: Context) -> Blueprint:
 
     def back(wp_id, error=None, anchor=""):
         return redirect(url_for("workpacks.workpack", wp_id=wp_id, error=error) + anchor)
+
+    def cert_field(cert, column):
+        return {"name": column, "label": cert_labels[column], "value": cert[column], "hint": certfields.hint(column),
+                "textarea": column in certfields.TEXTAREAS}
 
     # ---- the list ----------------------------------------------------------------------------
     @bp.get("/")
@@ -147,6 +153,34 @@ def create_blueprint(ctx: Context) -> Blueprint:
         except ValueError as e:
             return back(wp_id, str(e), "#certificates")
         return back(wp_id, anchor="#certificates")
+
+    @bp.get("/certificates/<int:cert_pk>")
+    def certificate(cert_pk):
+        need("workpacks.view")
+        cert = cert_or_404(cert_pk)
+        wp = wp_or_404(cert["workpack_id"])
+        sections = {name: [cert_field(cert, c) for c in cols]
+                    for name, cols in certfields.sections(cert["form"]).items()}
+        siblings = repo.list_certificates(wp["id"])
+        at = next(i for i, c in enumerate(siblings) if c["id"] == cert_pk)
+        return render_template("workpacks/certificate.html", wp=wp, cert=cert, sections=sections,
+                               previous=siblings[at - 1] if at > 0 else None,
+                               following=siblings[at + 1] if at + 1 < len(siblings) else None,
+                               forms=form_codes(store.folder), error=request.args.get("error"),
+                               saved=bool(request.args.get("saved")), can_edit=ctx.can("workpacks.edit"))
+
+    @bp.post("/certificates/<int:cert_pk>")
+    def update_certificate(cert_pk):
+        need("workpacks.edit")
+        cert_or_404(cert_pk)
+        data = request.form.to_dict()
+        if "form" in data:
+            data["form"] = data["form"].strip().upper()
+        try:
+            repo.update_certificate(cert_pk, data, ctx.current_user())
+        except ValueError as e:
+            return redirect(url_for("workpacks.certificate", cert_pk=cert_pk, error=str(e)))
+        return redirect(url_for("workpacks.certificate", cert_pk=cert_pk, saved=1))
 
     @bp.post("/certificates/<int:cert_pk>/duplicate")
     def duplicate_certificate(cert_pk):

@@ -14,9 +14,10 @@
 <table>
   <thead><tr><th class="num">#</th><th>ID</th><th>Form</th><th>Equipment</th><th>Table rows</th>{% if can_edit %}<th>Actions</th>{% endif %}</tr></thead>
   <tbody>{% for c in certs %}
-    <tr><td class="num">{{ loop.index }}</td><td><b>{{ c.cert_id }}</b></td><td>{{ c.form }}</td><td>{{ c.equipment }}</td>
+    <tr><td class="num">{{ loop.index }}</td><td><a href="{{ url_for('workpacks.certificate', cert_pk=c.id) }}"><b>{{ c.cert_id }}</b></a></td><td>{{ c.form }}</td><td>{{ c.equipment }}</td>
       <td>{{ c.rows_text }}</td>
       {% if can_edit %}<td class="actions">
+        <a class="btn" href="{{ url_for('workpacks.certificate', cert_pk=c.id) }}">Edit</a>
         <form method="post" action="{{ url_for('workpacks.duplicate_certificate', cert_pk=c.id) }}" class="inline">
           <input name="cert_id" placeholder="New ID" aria-label="New ID for the copy of {{ c.cert_id }}" autocomplete="off" required>
           <button class="btn" type="submit">Duplicate</button></form>
@@ -37,7 +38,7 @@
     <datalist id="forms">{% for f in forms %}<option value="{{ f }}">{% endfor %}</datalist></div>
   <div class="shrink"><button class="btn primary" type="submit">Add certificate</button></div>
 </form>
-<p class="note">The ID is a short name that is unique in this workpack. Its details are filled in on the certificate's own page.</p>
+<p class="note">The ID is a short name that is unique in this workpack. Open a certificate to fill in its details.</p>
 {% endif %}
 
 <h2>Project details</h2>
