@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable, Dict, List, Optional
 
-from .fields import WORKPACK_COLUMNS
+from .fields import CERTIFICATE_COLUMNS, WORKPACK_COLUMNS
 
 
 def now() -> str:
@@ -83,3 +83,73 @@ class Repo:
         with self._db() as db:
             db.execute("DELETE FROM workpack WHERE id=?", (wp_id,))
         self._audit("workpack_deleted", wp["title"] if wp else str(wp_id))
+
+    def _touch(self, db, wp_id: int, user: str) -> None:
+        """Record that something under this workpack changed."""
+        db.execute("UPDATE workpack SET updated_at=?, updated_by=? WHERE id=?", (now(), user, wp_id))
+
+    # ---- certificates ----------------------------------------------------------------------
+    def list_certificates(self, wp_id: int) -> List[Dict]:
+        with self._db() as db:
+            rows = db.execute(
+                "SELECT c.*, "
+                "(SELECT COUNT(*) FROM line  x WHERE x.certificate_id = c.id) AS line_count, "
+                "(SELECT COUNT(*) FROM joint x WHERE x.certificate_id = c.id) AS joint_count, "
+                "(SELECT COUNT(*) FROM tag   x WHERE x.certificate_id = c.id) AS tag_count "
+                "FROM certificate c WHERE c.workpack_id=? ORDER BY c.position, c.id", (wp_id,)).fetchall()
+        return [dict(r) for r in rows]
+
+    def get_certificate(self, cert_pk: int) -> Optional[Dict]:
+        with self._db() as db:
+            r = db.execute("SELECT * FROM certificate WHERE id=?", (cert_pk,)).fetchone()
+        return dict(r) if r else None
+
+    def add_certificate(self, wp_id: int, data: Dict, user: str) -> int:
+        cert_id, form = clean(data.get("cert_id")), clean(data.get("form"))
+        if not cert_id:
+            raise ValueError("Certificate ID is required")
+        if not form:
+            raise ValueError("Form is required")
+        values = {c: clean(data.get(c)) for c in CERTIFICATE_COLUMNS}
+        with self._db() as db:
+            if not db.execute("SELECT 1 FROM workpack WHERE id=?", (wp_id,)).fetchone():
+                raise ValueError("No such workpack")
+            if db.execute("SELECT 1 FROM certificate WHERE workpack_id=? AND cert_id=?", (wp_id, cert_id)).fetchone():
+                raise ValueError(f"Certificate {cert_id} already exists in this workpack")
+            position = (db.execute("SELECT MAX(position) FROM certificate WHERE workpack_id=?", (wp_id,)).fetchone()[0] or 0) + 1
+            columns = ["workpack_id", "position", "cert_id", "form"] + CERTIFICATE_COLUMNS
+            params = [wp_id, position, cert_id, form] + [values[c] for c in CERTIFICATE_COLUMNS]
+            cur = db.execute(f"INSERT INTO certificate ({','.join(columns)}) VALUES ({','.join('?' * len(columns))})", params)
+            self._touch(db, wp_id, user)
+        self._audit("certificate_added", f"{form} {cert_id}")
+        return cur.lastrowid
+
+    def update_certificate(self, cert_pk: int, data: Dict, user: str) -> Dict:
+        """Change only the fields present in data (including cert_id and form)."""
+        old = self.get_certificate(cert_pk)
+        if not old:
+            raise ValueError("No such certificate")
+        changes = {c: clean(data[c]) for c in ["cert_id", "form"] + CERTIFICATE_COLUMNS if c in data}
+        if "cert_id" in changes and not changes["cert_id"]:
+            raise ValueError("Certificate ID is required")
+        if "form" in changes and not changes["form"]:
+            raise ValueError("Form is required")
+        with self._db() as db:
+            new_id = changes.get("cert_id")
+            if new_id and new_id != old["cert_id"] and db.execute(
+                    "SELECT 1 FROM certificate WHERE workpack_id=? AND cert_id=?", (old["workpack_id"], new_id)).fetchone():
+                raise ValueError(f"Certificate {new_id} already exists in this workpack")
+            if changes:
+                db.execute(f"UPDATE certificate SET {','.join(c + '=?' for c in changes)} WHERE id=?", [*changes.values(), cert_pk])
+            self._touch(db, old["workpack_id"], user)
+        self._audit("certificate_updated", f"{old['form']} {old['cert_id']}")
+        return self.get_certificate(cert_pk)
+
+    def delete_certificate(self, cert_pk: int, user: str) -> None:
+        old = self.get_certificate(cert_pk)
+        if not old:
+            return
+        with self._db() as db:
+            db.execute("DELETE FROM certificate WHERE id=?", (cert_pk,))
+            self._touch(db, old["workpack_id"], user)
+        self._audit("certificate_deleted", f"{old['form']} {old['cert_id']}")
