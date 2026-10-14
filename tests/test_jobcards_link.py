@@ -50,7 +50,7 @@ def test_migration_adds_an_empty_link_and_keeps_existing_rows(tmp_path):
     with sqlite3.connect(db) as c:
         c.execute("INSERT INTO workpack (number, title, created_at) VALUES ('OLD', 'Old one', 'now')")
         c.execute("INSERT INTO jobcard (workpack_id, seq, number, updated_at) VALUES (1, 1, 'OLD-001', 'now')")
-    assert migrate(db, "jobcards", MIGRATIONS) == 1                      # only the new file is applied
+    assert migrate(db, "jobcards", MIGRATIONS) == 3                      # only the files not yet applied (0003, 0004, 0005)
     assert migrate(db, "jobcards", MIGRATIONS) == 0
     with sqlite3.connect(db) as c:
         assert "workpacks_ref" in {r[1] for r in c.execute("PRAGMA table_info(workpack)")}
@@ -92,8 +92,8 @@ def test_linked_gives_the_workpacks_and_a_summary_of_their_jobcards(link):
     one, two = result["jobcards"]
     assert one["id"] == first["id"] and one["number"] == "J1-001" and one["title"] == "Weld it"
     assert one["trade"] == "Welder" and one["revision"] == "B"
-    assert one["tasks"] == 2 and one["warnings"] == 1 and one["totals"]["total"] == 6
-    assert two["number"] == "J1-002" and two["tasks"] == 0 and two["warnings"] == 0
+    assert one["tasks"] == 4 and one["warnings"] == 1 and one["totals"]["total"] == 8      # ours + the 2 standard tasks
+    assert two["number"] == "J1-002" and two["tasks"] == 2 and two["warnings"] == 0          # just the standard tasks
     assert link.linked(99) == []
 
 

@@ -44,46 +44,46 @@ def test_save_round_trip_filters_unknown_flags(repo):
                                    "drawings": [{"number": "D1", "title": "x"}, {"number": "", "title": ""}],
                                    "tasks": [task(qty="4", norm_hours="1.5", source="library", norm_key="K1")]}, "k")
     assert saved["flags"] == ["COSHH"] and saved["drawings"] == [{"number": "D1", "title": "x"}]
-    assert saved["tasks"][0]["source"] == "library" and saved["totals"]["library"] == 6
+    assert saved["tasks"][1]["source"] == "library" and saved["totals"]["library"] == 6      # between the two standard tasks
 
 
 def test_library_line_without_a_key_is_stored_as_manual(repo):
     jc = repo.create_jobcard(repo.wp, "k")
     saved = repo.save_jobcard(jc, {"tasks": [task(source="library", norm_key="")]}, "k")
-    assert saved["tasks"][0]["source"] == "manual"
+    assert saved["tasks"][1]["source"] == "manual"
 
 
 def test_factor_is_stamped_and_audited_only_when_it_changes(repo):
     jc = repo.create_jobcard(repo.wp, "k")
-    t = repo.save_jobcard(jc, {"tasks": [task(factor="1.5", factor_reason="Congested")]}, "alex")["tasks"][0]
+    t = repo.save_jobcard(jc, {"tasks": [task(factor="1.5", factor_reason="Congested")]}, "alex")["tasks"][1]
     assert t["factor"] == 1.5 and t["factor_set_by"] == "alex"
-    again = repo.save_jobcard(jc, {"tasks": [dict(task(factor="1.5", factor_reason="Congested"), id=t["id"], description="b")]}, "someone-else")["tasks"][0]
+    again = repo.save_jobcard(jc, {"tasks": [dict(task(factor="1.5", factor_reason="Congested"), id=t["id"], description="b")]}, "someone-else")["tasks"][1]
     assert again["id"] == t["id"] and again["factor_set_by"] == "alex" and again["factor_set_at"] == t["factor_set_at"]
-    assert [e for e in repo.events if e[0] == "factor_changed"] == [("factor_changed", "WP1-001 line 1: factor set to 1.5")]
+    assert [e for e in repo.events if e[0] == "factor_changed"] == [("factor_changed", "WP1-001 line 2: factor set to 1.5")]
 
 
 def test_removed_tasks_are_deleted(repo):
     jc = repo.create_jobcard(repo.wp, "k")
-    first = repo.save_jobcard(jc, {"tasks": [task(), task(description="e")]}, "k")["tasks"]
-    left = repo.save_jobcard(jc, {"tasks": [dict(task(), id=first[0]["id"])]}, "k")["tasks"]
-    assert [t["id"] for t in left] == [first[0]["id"]]
+    first = repo.save_jobcard(jc, {"tasks": [task(), task(description="e")]}, "k")["tasks"]       # 2 standard + 2 of ours
+    left = repo.save_jobcard(jc, {"tasks": [dict(task(), id=first[1]["id"])]}, "k")["tasks"]
+    assert [t["id"] for t in left] == [first[0]["id"], first[1]["id"], first[3]["id"]]       # ours: one removed; standard ones kept
 
 
 def test_duplicate_copies_content_into_a_new_card(repo):
     jc = repo.create_jobcard(repo.wp, "k")
     repo.save_jobcard(jc, {"title": "Orig", "flags": ["COSHH"], "tasks": [task()]}, "k")
     copy = repo.get_jobcard(repo.duplicate_jobcard(jc, "k"))
-    assert copy["number"] == "WP1-002" and copy["title"] == "Orig" and copy["flags"] == ["COSHH"] and len(copy["tasks"]) == 1
+    assert copy["number"] == "WP1-002" and copy["title"] == "Orig" and copy["flags"] == ["COSHH"] and len(copy["tasks"]) == 3
 
 
 def test_rollup_and_snapshots_are_frozen(repo):
     jc = repo.create_jobcard(repo.wp, "k", "Welder")
     repo.save_jobcard(jc, {"trade": "Welder", "tasks": [task(qty=2, norm_hours=2)]}, "k")
-    assert repo.rollup(repo.wp) == [{"trade": "Welder", "library": 0.0, "manual": 4.0, "total": 4.0}]
+    assert repo.rollup(repo.wp) == [{"trade": "Welder", "library": 0.0, "manual": 6.0, "total": 6.0}]     # 4 + 2 standard
     repo.create_snapshot(repo.wp, "rev A", "k")
     repo.save_jobcard(jc, {"trade": "Welder", "tasks": [task(qty=10, norm_hours=2)]}, "k")
     snap = repo.list_snapshots(repo.wp)[0]
-    assert snap["label"] == "rev A" and snap["lines"][0]["manual"] == 4.0
+    assert snap["label"] == "rev A" and snap["lines"][0]["manual"] == 6.0
 
 
 def test_deleting_a_workpack_is_audited(repo):

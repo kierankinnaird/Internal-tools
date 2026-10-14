@@ -6,15 +6,19 @@ module, and everything goes in and out as plain dicts, lists and numbers.
 """
 from __future__ import annotations
 
+import re
 import sqlite3
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Callable, Dict, List
 
+from . import export
 from .constants import TRADES
 from .repo import Repo
 
 MAX_CREATE = 100          # most blank jobcards one call may create
+
+_UNSAFE_NAME = re.compile(r'[\\/:*?"<>|\x00-\x1f]')      # what cannot go in a file name
 
 _CREATE_KEYS = ("number", "title", "asset", "location", "discipline", "ces_doc_no", "fcp_no", "jobcard_prefix")
 
@@ -82,6 +86,31 @@ class JobcardsLink:
                                "totals": j["totals"]}
                               for j in self._repo.list_jobcards(wp["id"])]
         return wps
+
+    def export_linked(self, ref: int, folder: Path) -> List[Dict]:
+        """Write every jobcard of the jobcards workpacks linked to `ref` into `folder`, one Excel file each, named by
+        jobcard number. Returns [{number, file, error}] in order; a jobcard that could not be written has an error and
+        no file, and does not stop the others."""
+        ref = _ref(ref)
+        folder, results, taken = Path(folder), [], set()
+        for wp in self.linked(ref):
+            workpack = self._repo.get_workpack(wp["id"])
+            for summary in wp["jobcards"]:
+                number = summary["number"]
+                stem = _UNSAFE_NAME.sub("_", number).strip(" .") or "jobcard"
+                name, n = f"{stem}.xlsx", 1
+                while name.lower() in taken:
+                    n += 1
+                    name = f"{stem} ({n}).xlsx"
+                taken.add(name.lower())
+                try:
+                    folder.mkdir(parents=True, exist_ok=True)
+                    export.write_jobcard(folder / name, self._repo.get_jobcard(summary["id"]), workpack)
+                    results.append({"number": number, "file": name, "error": ""})
+                except Exception as e:
+                    (folder / name).unlink(missing_ok=True)
+                    results.append({"number": number, "file": "", "error": str(e) or type(e).__name__})
+        return results
 
     # ---- changing --------------------------------------------------------------------------
     def create_for(self, ref: int, user: str, data: Dict, count: int = 0, trade: str = "") -> int:

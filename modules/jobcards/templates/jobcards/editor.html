@@ -5,7 +5,7 @@
 <div class="jc">
 <div class="crumbs"><a href="{{ url_for('jobcards.index') }}">Jobcards</a> / <a href="{{ url_for('jobcards.workpack', wp_id=wp.id) }}">{{ wp.number }}</a> / {{ jc.number }}</div>
 <h1>Jobcard {{ jc.number }}</h1>
-<p class="lede">Hours on each line are quantity × norm × factor. Pick a norm from the library{% if not has_norms %} (not installed here, so type norms in by hand and say where they came from){% endif %}, or type one in and give its basis.</p>
+<p class="lede">Hours on each line are quantity × norm × factor, rounded up to the next whole hour. Pick a norm from the library{% if not has_norms %} (not installed here, so type norms in by hand and say where they came from){% endif %}, or type one in and give its basis.</p>
 
 <div class="row">
   <div style="flex:3 1 320px"><label for="title">Title</label><input id="title" data-f="title"></div>
@@ -34,7 +34,7 @@
 <h2>Tasks</h2>
 <table class="tasks">
   <thead><tr><th style="width:34px">#</th><th>Description</th><th style="width:80px" class="num">Qty</th><th style="width:150px" class="num">Norm (h per unit)</th>
-    <th style="width:80px" class="num">Factor</th><th style="width:90px" class="num">Hours</th><th style="width:70px"></th></tr></thead>
+    <th style="width:80px" class="num">Factor</th><th style="width:90px" class="num">Hours</th><th style="width:96px"></th></tr></thead>
   <tbody id="tasks"></tbody>
 </table>
 <p><button class="btn small" type="button" id="add-task">Add task</button></p>

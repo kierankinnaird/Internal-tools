@@ -26,6 +26,13 @@ When the jobcards module is installed, a workpack can have jobcards:
   the workpack is kept and its page says what went wrong.
 - **A workpack's page:** a *Jobcards* panel lists the linked jobcards workpacks and their jobcards (task count, hours,
   how many lines need checking), with forms to link another, create a new one or unlink.
+- **Fill forms:** a tick box (on by default when jobcards are linked) adds every linked jobcard to the run as an Excel file
+  in a folder called `9.0 JOBCARDS`, beside the Apache folders. They are in the results page, the per-file downloads and
+  the zip. The workbooks are made by the jobcards module (`modules/jobcards/export.py`) and are meant to be edited by
+  hand: each is one sheet (page 1, then the tasks on page 2) so Excel's Print and Save as PDF include everything, hours
+  are formulas, and notes (headings with no hours of their own) keep their bold, italic, underline and bullets. A jobcard that cannot be
+  written shows as a failed row and the rest are still written. Including them needs `jobcards.view` as well as
+  `workpacks.fill`.
 - **Deleting a workpack** keeps its jobcards and unlinks them.
 
 How it works: this module never imports jobcards. It asks the host for the optional service `jobcards.link` (see
@@ -44,7 +51,7 @@ All under the app's data folder (`userdata/`, which git ignores). Nothing below 
 |---|---|
 | `workpacks.sqlite` | Workpacks, certificates and table rows (own migrations in `migrations/`) |
 | `workpacks/templates/` | The blank Apache templates, installed from the templates pack. Set `NMC_WORKPACK_TEMPLATES` to use another folder |
-| `workpacks/output/wp<id>/<run>/` | One folder per fill run: the forms, `fill-log.csv`, `fill-audit.csv` and `run.json` |
+| `workpacks/output/wp<id>/<run>/` | One folder per fill run: the forms, `fill-log.csv`, `fill-audit.csv`, `run.json` and, when jobcards are included, `9.0 JOBCARDS/` |
 
 The Apache templates are Apache's documents, so they are not in the repository. The folder is checked against the pack's
 `MANIFEST.csv` and the workpacks pages say if it is missing, incomplete or different from the pack. The templates are

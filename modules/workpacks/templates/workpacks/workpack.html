@@ -66,7 +66,7 @@
     <tbody>{% for j in w.jobcards %}
       <tr><td><a href="{{ url_for('jobcards.editor', jc_id=j.id) }}"><b>{{ j.number }}</b></a></td><td>{{ j.title }}</td><td>{{ j.trade }}</td><td>{{ j.revision }}</td>
         <td class="num">{{ j.tasks }}</td>
-        <td class="num">{% if j.totals and j.totals.total is defined %}{{ '%.1f'|format(j.totals.total) }}{% endif %}</td>
+        <td class="num">{% if j.totals and j.totals.total is defined %}{{ '%g'|format(j.totals.total) }}{% endif %}</td>
         <td>{% if j.warnings %}<span class="status bad">{{ j.warnings }} to check</span>{% endif %}</td></tr>
     {% endfor %}</tbody>
   </table>

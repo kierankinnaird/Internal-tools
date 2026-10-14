@@ -38,6 +38,17 @@
     <div><label class="check"><input type="checkbox" name="add_rows" value="1"> Add table rows when the template is full</label>
       <div class="hint">Without this, a table with more rows than the template has room for is refused for that form.</div></div>
   </div>
+
+  {% if jc_pack %}
+  <h2>Jobcards</h2>
+  <div class="panel">
+    {% if jc_pack.jobcards %}
+    <label class="check"><input type="checkbox" name="include_jobcards" value="1" checked>
+      Include the linked jobcards ({{ jc_pack.jobcards }} in {{ jc_pack.workpacks }} jobcards workpack{{ '' if jc_pack.workpacks == 1 else 's' }})</label>
+    <div class="hint">Each jobcard is written as an Excel file in a folder called 9.0 JOBCARDS, so it can still be edited by hand. They are written as they are saved now.</div>
+    {% else %}<p class="note flat">No jobcards are linked to this workpack, so none will be included. Link some on the workpack page.</p>{% endif %}
+  </div>
+  {% endif %}
   <button class="btn primary" type="submit">Fill forms</button>
 </form>
 {% endif %}

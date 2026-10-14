@@ -75,6 +75,20 @@ h2 { font-size: 17px; margin: 32px 0 10px; padding-bottom: 6px; border-bottom: 2
 .sub .lab { font-size: 12px; color: var(--muted); }
 .stampline { font-size: 12px; color: var(--muted); }
 
+/* Editor: standard tasks and task notes */
+.tasks td.acts { white-space: nowrap; }
+.tasks td.acts .btn { display: block; margin-bottom: 4px; }
+.tasks tr.standard > td:first-child { border-left: 4px solid var(--accent); }
+.tasks tr.notekind > td:first-child { border-left: 4px solid var(--ink); }
+.tasks tr.notekind td { background: #f4f4f4; }
+.notebar { display: flex; gap: 4px; margin-bottom: 4px; }
+.notebar .btn { min-width: 34px; }
+.notebar .fmt-bold { font-weight: 900; } .notebar .fmt-italic { font-style: italic; } .notebar .fmt-underline { text-decoration: underline; }
+.notebox { min-height: 64px; padding: 7px 9px; background: #fff; border: 1px solid #8a8a8a; }
+.notebox:focus { outline: 3px solid var(--accent); outline-offset: 0; }
+.notebox ul, .notebox ol { margin: 4px 0; padding-left: 22px; }
+.notebox:empty::before { content: "A heading for the tasks under it, e.g. the main job with its subtasks listed below. Use the buttons above for bold, italic, underline or a list."; color: var(--muted); }
+
 /* Editor: sticky save bar */
 .savebar { position: sticky; bottom: 0; background: #fff; border-top: 3px solid var(--ink); padding: 10px 0; display: flex; gap: 14px; align-items: center; margin-top: 24px; }
 .savebar .spacer { flex: 1; }

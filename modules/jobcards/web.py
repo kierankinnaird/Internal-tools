@@ -16,6 +16,7 @@ def create_blueprint(ctx: Context) -> Blueprint:
     bp = Blueprint("jobcards", __name__, url_prefix="/jobcards", template_folder="templates",
                    static_folder="static", static_url_path="/static")
     repo = Repo(ctx.data_dir / "jobcards.sqlite", audit=lambda a, d: ctx.audit("jobcards", a, d))
+    bp.add_app_template_filter(calc.format_hours, "jc_hours")
 
     def norms():
         return ctx.services.get("norms.lookup")
@@ -95,7 +96,7 @@ def create_blueprint(ctx: Context) -> Blueprint:
         w = csv.writer(buf)
         w.writerow(["Workpack", "Trade", "Library hours", "Manual hours", "Total hours"])
         for r in repo.rollup(wp_id):
-            w.writerow([wp["number"], r["trade"], round(r["library"], 2), round(r["manual"], 2), round(r["total"], 2)])
+            w.writerow([wp["number"], r["trade"], calc.tidy_hours(r["library"]), calc.tidy_hours(r["manual"]), calc.tidy_hours(r["total"])])
         return Response(buf.getvalue(), mimetype="text/csv",
                         headers={"Content-Disposition": f'attachment; filename="{wp["number"]}-hours-by-trade.csv"'})
 
@@ -117,7 +118,10 @@ def create_blueprint(ctx: Context) -> Blueprint:
             for t in data.get("tasks", []):
                 p = prev.get(t.get("id"))
                 t["factor"], t["factor_reason"] = (p["factor"], p["factor_reason"]) if p else (1, "")
-        jc = repo.save_jobcard(jc_id, data, ctx.current_user())
+        try:
+            jc = repo.save_jobcard(jc_id, data, ctx.current_user())
+        except ValueError as e:
+            return jsonify({"error": str(e)}), 400
         return jsonify(_view(jc))
 
     @bp.post("/cards/<int:jc_id>/duplicate")

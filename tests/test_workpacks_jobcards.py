@@ -225,7 +225,7 @@ def test_the_panel_shows_each_jobcard_with_its_hours_and_checks(both):
         {"description": "b", "norm_hours": 1, "source": "manual", "basis": "quote"}]}, "k")
     html = c.get("/workpacks/1").get_data(as_text=True)
     assert "Lift it" in html and "Rigger" in html and ">C<" in html
-    assert "5.0" in html and "1 to check" in html
+    assert '<td class="num">7</td>' in html and "1 to check" in html            # 5 of ours + the 2 standard hours
     assert html.index('id="jobcards"') < html.index("<h2>Project details</h2>")
 
 
@@ -327,7 +327,7 @@ def test_deleting_a_workpack_keeps_and_unlinks_its_jobcards(both):
     assert wp_count(tmp) == 0
     assert jc_rows(tmp, "SELECT number, workpacks_ref FROM workpack") == [("JW", None)]
     assert jc_rows(tmp, "SELECT COUNT(*) FROM jobcard") == [(2,)]
-    assert jc.get_jobcard(1)["title"] == "Keep me" and len(jc.get_jobcard(1)["tasks"]) == 1
+    assert jc.get_jobcard(1)["title"] == "Keep me" and len(jc.get_jobcard(1)["tasks"]) == 3
     # a later workpack that reuses id 1 does not inherit the old jobcards
     new_wp(c, title="Later")
     assert "JW-001" not in c.get("/workpacks/1").get_data(as_text=True)

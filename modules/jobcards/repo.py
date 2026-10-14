@@ -7,8 +7,12 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable, Dict, List, Optional
 
-from . import calc
-from .constants import ALL_FLAGS
+from . import calc, richtext
+from .constants import ALL_FLAGS, STANDARD_BASIS, STANDARD_TASKS
+
+# What of a task is copied when a task is carried over, or put back, as a plain dict.
+_TASK_FIELDS = ("description", "qty", "norm_hours", "basis", "norm_key", "norm_uom", "norm_desc", "source", "factor",
+                "factor_reason", "note", "kind")
 
 def now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
@@ -98,6 +102,8 @@ class Repo:
             jc["flags"] = [x[0] for x in db.execute("SELECT flag FROM jobcard_flag WHERE jobcard_id=?", (jc_id,))]
             jc["drawings"] = [dict(x) for x in db.execute("SELECT number,title FROM drawing WHERE jobcard_id=? ORDER BY pos", (jc_id,))]
             jc["tasks"] = [dict(x) for x in db.execute("SELECT * FROM task WHERE jobcard_id=? ORDER BY pos", (jc_id,))]
+        for t in jc["tasks"]:
+            t["note"] = richtext.clean(t["note"])         # whatever reaches a page has been cleaned, however it got stored
         jc["totals"] = calc.jobcard_totals(jc["tasks"])
         return jc
 
@@ -112,6 +118,10 @@ class Repo:
                 "INSERT INTO jobcard (workpack_id,seq,number,trade,asset,location,created_by_name,created_date,updated_at,updated_by) "
                 "VALUES (?,?,?,?,?,?,?,?,?,?)",
                 (wp_id, seq, number, trade, wp["asset"], wp["location"], user, now()[:10], now(), user))
+            for pos, standard in enumerate(STANDARD_TASKS):
+                db.execute("INSERT INTO task (jobcard_id,pos,description,qty,norm_hours,basis,source,factor,role) "
+                           "VALUES (?,?,?,1,1,?,'manual',1,?)",
+                           (cur.lastrowid, pos, standard["description"], STANDARD_BASIS, standard["role"]))
         self._audit("jobcard_created", number)
         return cur.lastrowid
 
@@ -122,8 +132,14 @@ class Repo:
                                        "created_by_name", "created_by_position", "created_by_signature", "ans_sh1_no", "created_date", "revision")}
         payload["flags"] = src["flags"]
         payload["drawings"] = src["drawings"]
-        payload["tasks"] = [{k: t[k] for k in ("description", "qty", "norm_hours", "basis", "norm_key", "norm_uom",
-                                               "norm_desc", "source", "factor", "factor_reason")} for t in src["tasks"]]
+        # The new card already has its own standard tasks; the copied ones land on them instead of doubling up.
+        standard = {t["role"]: t["id"] for t in self.get_jobcard(new_id)["tasks"] if t["role"]}
+        payload["tasks"] = []
+        for t in src["tasks"]:
+            copied = {k: t[k] for k in _TASK_FIELDS}
+            if t["role"] in standard:
+                copied["id"] = standard[t["role"]]
+            payload["tasks"].append(copied)
         self.save_jobcard(new_id, payload, user)
         return new_id
 
@@ -133,12 +149,30 @@ class Repo:
             db.execute("DELETE FROM jobcard WHERE id=?", (jc_id,))
         self._audit("jobcard_deleted", jc["number"] if jc else str(jc_id))
 
+    @staticmethod
+    def _standard_order(incoming: List[Dict], old_tasks: Dict[int, Dict]) -> List[Dict]:
+        """The saved tasks with the standard ones where they belong: the 'first' task at the top, the 'last' one at the
+        bottom, everything else between in the order given. A task is standard only if the database says so, never
+        because the browser says so. A standard task left out of the save is put back, so it cannot be dropped."""
+        def role(t):
+            prev = old_tasks.get(t.get("id"))
+            return prev["role"] if prev else ""
+        sent = {t.get("id") for t in incoming}
+        ends = {"first": [t for t in incoming if role(t) == "first"], "last": [t for t in incoming if role(t) == "last"]}
+        for task_id, prev in old_tasks.items():
+            if prev["role"] and task_id not in sent:
+                ends[prev["role"]].append(dict({k: prev[k] for k in _TASK_FIELDS}, id=task_id))
+        return ends["first"] + [t for t in incoming if not role(t)] + ends["last"]
+
     def save_jobcard(self, jc_id: int, data: Dict, user: str) -> Dict:
         """Replace the editable content. Existing tasks are matched by id so factor stamps survive."""
         old = self.get_jobcard(jc_id)
         if not old:
             raise ValueError("No such jobcard")
         old_tasks = {t["id"]: t for t in old["tasks"]}
+        incoming = [t for t in data.get("tasks", []) if isinstance(t, dict)]
+        tasks = self._standard_order(incoming, old_tasks)
+        notes = [richtext.clean(t.get("note")) for t in tasks]          # refuses an over-long note before anything is saved
         stamp = now()
         factor_events = []
         with self._db() as db:
@@ -160,21 +194,29 @@ class Repo:
                            (jc_id, i, d.get("number", "").strip(), d.get("title", "").strip()))
             keep = set()
             pos = 0
-            for t in data.get("tasks", []):
-                source = "library" if t.get("source") == "library" and t.get("norm_key") else "manual"
-                factor = _num(t.get("factor"))
-                factor = 1.0 if factor is None else factor
-                reason = (t.get("factor_reason") or "").strip()
-                row = (pos, (t.get("description") or "").strip(), _num(t.get("qty")), _num(t.get("norm_hours")),
-                       (t.get("basis") or "").strip(), t.get("norm_key", "") if source == "library" else "",
-                       t.get("norm_uom", "") if source == "library" else "",
-                       t.get("norm_desc", "") if source == "library" else "", source, factor, reason)
+            for t, note in zip(tasks, notes):
                 prev = old_tasks.get(t.get("id"))
+                if t.get("kind") == "note" and not (prev and prev["role"]):       # a standard task is always a task
+                    # A note is a heading: formatted text, no hours. The tasks under it carry the hours.
+                    kind, description, qty, norm, basis = "note", richtext.plain(note), None, None, ""
+                    source, factor, reason = "manual", 1.0, ""
+                    key = uom = ndesc = ""
+                else:
+                    kind, note = "task", ""                                         # a task that carries hours has no note
+                    source = "library" if t.get("source") == "library" and t.get("norm_key") else "manual"
+                    factor = _num(t.get("factor"))
+                    factor = 1.0 if factor is None else factor
+                    reason = (t.get("factor_reason") or "").strip()
+                    description, qty, norm = (t.get("description") or "").strip(), _num(t.get("qty")), _num(t.get("norm_hours"))
+                    basis = (t.get("basis") or "").strip()
+                    key, uom, ndesc = ((t.get("norm_key", ""), t.get("norm_uom", ""), t.get("norm_desc", ""))
+                                       if source == "library" else ("", "", ""))
+                row = (pos, description, qty, norm, basis, key, uom, ndesc, source, factor, reason, note, kind)
                 if prev:
                     changed = prev["factor"] != factor or prev["factor_reason"] != reason
                     setby, setat = (user, stamp) if changed else (prev["factor_set_by"], prev["factor_set_at"])
                     db.execute("UPDATE task SET pos=?,description=?,qty=?,norm_hours=?,basis=?,norm_key=?,norm_uom=?,"
-                               "norm_desc=?,source=?,factor=?,factor_reason=?,factor_set_by=?,factor_set_at=? WHERE id=?",
+                               "norm_desc=?,source=?,factor=?,factor_reason=?,note=?,kind=?,factor_set_by=?,factor_set_at=? WHERE id=?",
                                row + (setby, setat, prev["id"]))
                     keep.add(prev["id"])
                     if prev["factor"] != factor:
@@ -183,8 +225,8 @@ class Repo:
                     changed = factor != 1.0
                     setby, setat = (user, stamp) if changed else ("", "")
                     cur = db.execute("INSERT INTO task (pos,description,qty,norm_hours,basis,norm_key,norm_uom,norm_desc,"
-                                     "source,factor,factor_reason,jobcard_id,factor_set_by,factor_set_at) "
-                                     "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)", row + (jc_id, setby, setat))
+                                     "source,factor,factor_reason,note,kind,jobcard_id,factor_set_by,factor_set_at) "
+                                     "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", row + (jc_id, setby, setat))
                     keep.add(cur.lastrowid)
                     if changed:
                         factor_events.append(f"{old['number']} line {pos + 1}: factor set to {factor:g}")

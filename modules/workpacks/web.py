@@ -9,7 +9,7 @@ from core.context import Context
 
 from . import certfields, importer, rowtables, runs
 from .fields import CERTIFICATE_FIELDS, ROW_KIND_BY_FORM, WORKPACK_FIELDS
-from .fill import FillService
+from .fill import FillService, FormResult
 from .forms import form_codes
 from .repo import Repo
 from .store import TemplateStatus, TemplateStore, default_folder
@@ -30,6 +30,7 @@ GROUPS = [
 ]
 TEXTAREAS = {"handover_includes", "handover_excludes", "ee12_description"}
 ROW_NOUN = {"line": "line", "joint": "joint", "tag": "tag"}
+JOBCARDS_FOLDER = "9.0 JOBCARDS"       # where the jobcards go in a fill run, beside the Apache folders
 
 
 def template_banner(status: TemplateStatus) -> Dict:
@@ -188,6 +189,27 @@ def create_blueprint(ctx: Context) -> Blueprint:
         data = {"number": number, "title": wp["title"], "fcp_no": wp["project_no"], "location": wp["location"],
                 "jobcard_prefix": parse_prefix(form.get("jc_prefix"))}
         jobcards().create_for(wp_id, ctx.current_user(), data, parse_count(form.get("jc_count")))
+
+    def jobcards_pack(wp_id):
+        """What the Fill page says about including jobcards, or None to say nothing."""
+        service = jobcards()
+        if service is None or not ctx.can("jobcards.view"):
+            return None
+        linked = service.linked(wp_id)
+        return {"workpacks": len(linked), "jobcards": sum(len(w["jobcards"]) for w in linked)}
+
+    def add_jobcards_to_run(report, wp_id, out_dir):
+        """Write the linked jobcards into the run, one Excel file each, and list them with the forms."""
+        try:
+            written = jobcards().export_linked(wp_id, out_dir / JOBCARDS_FOLDER)
+        except Exception:
+            current_app.logger.exception("The jobcards could not be added to the run")
+            report.notes.append("The jobcards could not be written, so they are not in this run")
+            return
+        for item in written:
+            report.forms.append(FormResult(item["number"], "Jobcard", "OK" if not item["error"] else "FAILED",
+                                           f"{JOBCARDS_FOLDER}/{item['file']}" if item["file"] else "", item["error"]))
+        ctx.audit("workpacks", "jobcards_added_to_run", f"{report.workpack}: {len(written)} jobcards")
 
     def link_existing_jobcards(wp_id, form):
         service = jobcards()
@@ -439,7 +461,7 @@ def create_blueprint(ctx: Context) -> Blueprint:
         status = store.status()
         return render_template("workpacks/fill.html", wp=wp, certs=certs, banner=template_banner(status),
                                ready=status.present, previous=saved_runs.list(wp_id), run_title=run_title,
-                               error=request.args.get("error"))
+                               error=request.args.get("error"), jc_pack=jobcards_pack(wp_id))
 
     @bp.post("/<int:wp_id>/fill")
     def fill_forms(wp_id):
@@ -459,6 +481,9 @@ def create_blueprint(ctx: Context) -> Blueprint:
         except ValueError as e:
             return refused(str(e))
         add_rows = bool(request.form.get("add_rows"))
+        include_jobcards = bool(request.form.get("include_jobcards")) and jobcards() is not None
+        if include_jobcards and not ctx.can("jobcards.view"):
+            abort(403)
         try:
             run_id, out_dir = saved_runs.new(wp_id)
         except ValueError as e:
@@ -471,6 +496,8 @@ def create_blueprint(ctx: Context) -> Blueprint:
         except Exception:
             saved_runs.delete(wp_id, run_id)
             raise
+        if include_jobcards:
+            add_jobcards_to_run(report, wp_id, out_dir)
         saved_runs.save(wp_id, run_id, runs.describe(report, ctx.current_user(), spare, add_rows))
         return redirect(url_for("workpacks.run_page", wp_id=wp_id, run_id=run_id))
 

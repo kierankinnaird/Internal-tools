@@ -14,7 +14,7 @@
   <tbody>{% for j in jobcards %}
     <tr><td><a href="{{ url_for('jobcards.editor', jc_id=j.id) }}"><b>{{ j.number }}</b></a></td><td>{{ j.revision }}</td><td>{{ j.title }}</td>
       <td>{{ j.trade }}</td>
-      <td class="num">{{ '%.2f' % j.totals.library }}</td><td class="num">{{ '%.2f' % j.totals.manual }}</td><td class="num"><b>{{ '%.2f' % j.totals.total }}</b></td>
+      <td class="num">{{ j.totals.library|jc_hours }}</td><td class="num">{{ j.totals.manual|jc_hours }}</td><td class="num"><b>{{ j.totals.total|jc_hours }}</b></td>
       <td>{% if j.warning_count %}<span class="tag warn">{{ j.warning_count }} to check</span>{% endif %}</td></tr>
   {% endfor %}</tbody>
 </table>
@@ -30,16 +30,16 @@
 <table>
   <thead><tr><th>Trade</th><th class="num">Library h</th><th class="num">Manual h</th><th class="num">Total h</th></tr></thead>
   <tbody>
-    {% for r in rollup %}<tr><td>{{ r.trade }}</td><td class="num">{{ '%.2f' % r.library }}</td><td class="num">{{ '%.2f' % r.manual }}</td><td class="num"><b>{{ '%.2f' % r.total }}</b></td></tr>{% endfor %}
-    <tr class="total"><td>Total</td><td class="num">{{ '%.2f' % rollup|sum(attribute='library') }}</td><td class="num">{{ '%.2f' % rollup|sum(attribute='manual') }}</td><td class="num">{{ '%.2f' % rollup|sum(attribute='total') }}</td></tr>
+    {% for r in rollup %}<tr><td>{{ r.trade }}</td><td class="num">{{ r.library|jc_hours }}</td><td class="num">{{ r.manual|jc_hours }}</td><td class="num"><b>{{ r.total|jc_hours }}</b></td></tr>{% endfor %}
+    <tr class="total"><td>Total</td><td class="num">{{ rollup|sum(attribute='library')|jc_hours }}</td><td class="num">{{ rollup|sum(attribute='manual')|jc_hours }}</td><td class="num">{{ rollup|sum(attribute='total')|jc_hours }}</td></tr>
   </tbody>
 </table>
-<p class="note">Library hours come from norms in the library; manual hours were typed in with a stated basis. These are the figures the CTR front sheet needs.</p>
+<p class="note">Library hours come from norms in the library; manual hours were typed in with a stated basis. Each task's hours are rounded up to the next whole hour before they are added up. These are the figures the CTR front sheet needs.</p>
 <p><a class="btn" href="{{ url_for('jobcards.rollup_csv', wp_id=wp.id) }}">Download as CSV</a></p>
 {% else %}<div class="empty">Add hours to a jobcard and the totals appear here.</div>{% endif %}
 
 <h2 id="snapshots">Snapshots</h2>
-<p class="note">A snapshot freezes today's hours by trade, so a CTR can say which version of the jobcards it was built on.</p>
+<p class="note">A snapshot freezes today's hours by trade (whole hours, as above), so a CTR can say which version of the jobcards it was built on.</p>
 <form method="post" action="{{ url_for('jobcards.create_snapshot', wp_id=wp.id) }}" class="row">
   <div><label for="label">Label</label><input id="label" name="label" placeholder="e.g. Issued for CTR rev A"></div>
   <div class="shrink"><button class="btn dark" type="submit">Take snapshot</button></div>
@@ -47,7 +47,7 @@
 {% for s in snapshots %}
 <details class="new"><summary>{{ s.label or 'Snapshot' }} — {{ s.created_at[:16].replace('T',' ') }} UTC, {{ s.created_by }}</summary>
   <table><thead><tr><th>Trade</th><th class="num">Library h</th><th class="num">Manual h</th><th class="num">Total h</th></tr></thead>
-  <tbody>{% for l in s.lines %}<tr><td>{{ l.trade }}</td><td class="num">{{ '%.2f' % l.library }}</td><td class="num">{{ '%.2f' % l.manual }}</td><td class="num">{{ '%.2f' % l.total }}</td></tr>{% endfor %}</tbody></table>
+  <tbody>{% for l in s.lines %}<tr><td>{{ l.trade }}</td><td class="num">{{ l.library|jc_hours }}</td><td class="num">{{ l.manual|jc_hours }}</td><td class="num">{{ l.total|jc_hours }}</td></tr>{% endfor %}</tbody></table>
 </details>
 {% endfor %}
 

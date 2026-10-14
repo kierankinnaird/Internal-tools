@@ -17,6 +17,8 @@
   .tasks td.item { border-style: solid solid dashed solid; }
   .page2 { page-break-before: always; break-before: page; }
   .small { font-size: 10.5px; }
+  .tnote { margin: 0; } .tnote ul, .tnote ol { margin: 2px 0; padding-left: 18px; }
+  .tnote p, .tnote div { margin: 0; }
   .bar { padding: 10px 14px; background: #111; color: #fff; display: flex; gap: 12px; align-items: center; font-family: Arial, sans-serif; }
   .bar button { font: inherit; font-weight: bold; padding: 6px 16px; border: 2px solid #111; background: #ff6b00; cursor: pointer; border-radius: 0; }
   @media print { .bar { display: none; } body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
@@ -83,9 +85,14 @@
   <colgroup><col style="width:7%"><col style="width:55%"><col style="width:9.5%"><col style="width:9.5%"><col style="width:9.5%"><col style="width:9.5%"></colgroup>
   <tr><td colspan="6" class="hd" style="border-style:solid">TASKS</td></tr>
   <tr><td class="c" style="border-style:solid">ITEM</td><td class="c" style="border-style:solid">DESCRIPTION</td><td class="c" style="border-style:solid">QTY</td><td class="c" style="border-style:solid">NORM</td><td class="c" style="border-style:solid">FACTOR</td><td class="c" style="border-style:solid">HOURS</td></tr>
-  {% for i in range([10, jc.tasks|length]|max) %}{% set t = jc.tasks[i] if i < jc.tasks|length else None %}
+  {# The sheet has at least 10 item rows. A closing standard task ("last") sits on the bottom row, below any blank rows. #}
+  {% set closing = jc.tasks[-1] if jc.tasks and jc.tasks[-1].role == 'last' else None %}
+  {% set body = jc.tasks[:-1] if closing else jc.tasks %}
+  {% set rowcount = [10, jc.tasks|length]|max %}
+  {% for i in range(rowcount) %}
+  {% if closing and i == rowcount - 1 %}{% set t = closing %}{% elif i < body|length %}{% set t = body[i] %}{% else %}{% set t = None %}{% endif %}
   <tr><td class="c">{{ i + 1 }}</td>
-    <td class="blue">{{ t.description if t }}{% if t and t.factor != 1 and t.factor_reason %}<div class="small"><i>Factor: {{ t.factor_reason }}</i></div>{% endif %}</td>
+    <td class="blue">{% if t and t.kind == 'note' %}<div class="tnote">{{ t.note|safe }}</div>{% else %}{{ t.description if t }}{% endif %}{% if t and t.kind != 'note' and t.factor != 1 and t.factor_reason %}<div class="small"><i>Factor: {{ t.factor_reason }}</i></div>{% endif %}</td>
     <td class="blue c">{{ '%g' % t.qty if t and t.qty is not none }}</td><td class="blue c">{{ '%g' % t.norm_hours if t and t.norm_hours is not none }}</td>
     <td class="blue c">{{ '%g' % t.factor if t and (t.qty is not none or t.norm_hours is not none) }}</td>
     <td class="blue c">{{ '%g' % t.hours if t and t.hours }}</td></tr>{% endfor %}
