@@ -106,7 +106,8 @@ dialog .body { padding: 16px; overflow: auto; max-height: calc(84vh - 50px); }
 
 /* Norm suggestions shown under a task line while typing */
 .sugg { border: 1px solid var(--ink); border-left: 6px solid var(--accent); padding: 6px 8px; margin-bottom: 6px; background: #fff; }
-.sugg-head { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; margin-bottom: 4px; }
+.sugg-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; margin-bottom: 4px; }
+.sugg-head .btn { flex: none; text-transform: none; letter-spacing: 0; }
 .sugg-item { display: block; width: 100% !important; text-align: left; font: inherit; font-size: 13px; padding: 4px 6px; margin: 0 0 2px; border: 0; border-bottom: 1px solid var(--line); background: #fff; cursor: pointer; }
 .sugg-item:hover, .sugg-item:focus-visible { background: #fff4ec; }
 .sugg .btn { margin-top: 4px; }

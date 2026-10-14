@@ -1,4 +1,6 @@
-from modules.norms.service import NormsService
+import pytest
+
+from modules.norms.service import NormsService, suggest_tokens, whole_number, words_needed
 
 
 svc = NormsService()
@@ -76,3 +78,54 @@ def test_suggest_needs_two_matching_words_unless_only_one_given():
     assert svc.suggest("weld").rows
     one_real_word = svc.suggest("weld zzzqqq").rows
     assert one_real_word == []
+
+# ---- a bad limit is not an error ----------------------------------------------------------------------------
+@pytest.mark.parametrize("value, expected", [("abc", 50), ("", 50), (None, 50), ("1.5", 50), ("  7 ", 7), (7, 7), ("-5", 1), ("0", 1),
+                                              ("99999", 500), (True, 50), ("٣", 3), ("1e3", 50), ("0x10", 50), ("%00", 50)])
+def test_whole_number_falls_back_to_the_default_and_stays_in_range(value, expected):
+    assert whole_number(value, default=50, low=1, high=500) == expected
+
+
+@pytest.mark.parametrize("limit", ["abc", "", "-5", "0", "99999", "1.5", "10", None, "٣"])
+def test_search_and_suggest_accept_any_limit(limit):
+    result = svc.search("pipe", limit=limit)
+    assert 1 <= len(result.rows) <= 500 and result.total > 0
+    suggested = svc.suggest("install junction box", limit=limit)
+    assert 1 <= len(suggested.rows) <= 20
+
+
+def test_the_norms_api_never_fails_on_a_bad_limit(tmp_path):
+    from hosts.standalone import create_app
+    c = create_app(userdata=tmp_path, user_name="t").test_client()
+    for value in ("abc", "", "-5", "0", "99999", "1.5", "%00", " 7 "):
+        r = c.get("/norms/api/search", query_string={"q": "pipe", "limit": value})
+        assert r.status_code == 200 and r.get_json()["shown"] == len(r.get_json()["rows"]) >= 1, value
+    assert c.get("/norms/api/search?q=pipe&limit=3").get_json()["shown"] == 3
+    assert c.get("/norms/api/search?q=pipe&limit=abc").get_json()["shown"] == 200          # the default
+
+
+# ---- suggestions need a real match, in proportion to the description ----------------------------------------------
+@pytest.mark.parametrize("words, needed", [(0, 1), (1, 1), (2, 2), (3, 2), (4, 2), (5, 3), (6, 3), (7, 4), (8, 4)])
+def test_words_needed_grows_with_the_description(words, needed):
+    assert words_needed(words) == needed
+
+
+def test_a_long_description_that_only_shares_a_couple_of_words_gets_no_suggestions():
+    # these share "install" and one more word with some norm, which used to be enough to offer an unrelated one
+    for text in ("Install blind flange c/w DBB instrument valve assembly at TP-13.",
+                 "Break flange & hub type connections from TP-12 to TP-14",
+                 "Existing spring support cans on retained p/work to be gagged prior to destruct as per Note P2 / P3"):
+        assert len(suggest_tokens(text)) >= 6
+        assert svc.suggest(text).rows == [], text
+
+
+def test_short_descriptions_that_really_match_still_get_suggestions():
+    for text in ("Install junction box", "Install cable glands on junction box", "Weld 6 inch pipe butt weld",
+                 'Cut and bevel 6" sch 40 pipe for welding'):
+        rows = svc.suggest(text).rows
+        assert rows and all(r["status"] == "OK" for r in rows), text
+
+
+def test_a_longer_description_is_suggested_for_when_most_of_it_matches():
+    rows = svc.suggest("install junction box 3 way welding socket").rows           # 6 words, needs 3 and a norm has them all
+    assert rows and "JUNCTION" in rows[0]["item"].upper()

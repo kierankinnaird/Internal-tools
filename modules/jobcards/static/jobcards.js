@@ -154,8 +154,22 @@
     row.refresh = refresh;
     [desc, qty, factor, basis, reason].forEach(function (i) { i.addEventListener("input", function () { markDirty(); refresh(); }); });
     desc.addEventListener("input", function () { scheduleSuggest(row); });
-    norm.addEventListener("input", function () {   // typing a norm makes it manual
+    desc.addEventListener("keydown", function (e) {
+      if (e.key === "Escape") closeSuggestions(row, true);
+      else if (e.key === "ArrowDown" && sugg.style.display !== "none") {      // reach the list from the keyboard
+        var first = sugg.querySelector(".sugg-item");
+        if (first) { e.preventDefault(); first.focus(); }
+      }
+    });
+    desc.addEventListener("blur", function (e) { if (!sugg.contains(e.relatedTarget)) closeSuggestions(row, false); });
+    sugg.addEventListener("mousedown", function (e) { e.preventDefault(); });   // clicking in the list keeps the cursor in the description
+    sugg.addEventListener("keydown", function (e) { if (e.key === "Escape") { closeSuggestions(row, true); desc.focus(); } });
+    sugg.addEventListener("focusout", function (e) {                          // tabbing out of the list closes it too
+      if (!sugg.contains(e.relatedTarget) && e.relatedTarget !== desc) closeSuggestions(row, false);
+    });
+    norm.addEventListener("input", function () {   // typing a norm makes it manual, and a norm is chosen, so no suggestions
       if (state.source === "library") { state.source = "manual"; state.key = ""; state.ndesc = ""; state.uom = ""; }
+      closeSuggestions(row, false);
       markDirty(); refresh();
     });
     find.addEventListener("click", function () { openPicker(row); });
@@ -164,7 +178,7 @@
         if (!hasNote()) noteBox.textContent = desc.value.trim();        // keep whatever was already typed
         state.kind = "note"; state.source = "manual"; state.key = ""; state.ndesc = ""; state.uom = "";
         qty.value = ""; norm.value = ""; factor.value = 1; basis.value = ""; reason.value = "";   // a note carries no hours
-        sugg.style.display = "none";
+        closeSuggestions(row, false);
       } else {
         desc.value = noteBox.innerText.trim();
         noteBox.innerHTML = "";
@@ -173,7 +187,7 @@
       applyKind(); markDirty(); refresh();
       (state.kind === "note" ? noteBox : desc).focus();
     });
-    rm.addEventListener("click", function () { main.remove(); sub.remove(); tasks.splice(tasks.indexOf(row), 1); renumber(); markDirty(); totals(); });
+    rm.addEventListener("click", function () { closeSuggestions(row, false); main.remove(); sub.remove(); tasks.splice(tasks.indexOf(row), 1); renumber(); markDirty(); totals(); });
     // A new task goes above the closing standard task, so that one always stays at the bottom.
     var closing = tasks.filter(function (r) { return r.state.role === "last"; })[0];
     var at = !state.role && closing ? tasks.indexOf(closing) : tasks.length;
@@ -186,20 +200,38 @@
   var tasks = [];
 
   // ---- suggestions: while a description is typed, offer norms that might fit. Nothing applies until clicked.
+  // They are only offered for an ordinary task that has no norm yet, and only while its description has the cursor.
+  // Escape, the Close button, moving to another field, typing a norm or picking one all close the list. Closed by hand,
+  // it stays closed for that task until its description is emptied, so it does not keep coming back as you type.
+  function wantsSuggestions(row) {
+    return D.hasNorms && D.canEdit && !row.state.role && row.state.kind !== "note" && row.state.source !== "library" &&
+           !row.norm.value.trim();
+  }
+  function closeSuggestions(row, byHand) {
+    clearTimeout(row.stimer);
+    row.sseq = (row.sseq || 0) + 1;                 // a reply still on its way is ignored
+    row.sugg.style.display = "none";
+    if (byHand) row.dismissed = true;
+  }
   function scheduleSuggest(row) {
-    if (!D.hasNorms || !D.canEdit) return;
+    if (!row.desc.value.trim()) row.dismissed = false;
+    if (!wantsSuggestions(row) || row.dismissed) { closeSuggestions(row, false); return; }
     clearTimeout(row.stimer);
     row.stimer = setTimeout(function () { suggest(row); }, 450);
   }
   function suggest(row) {
     var text = row.desc.value.trim();
-    if (row.state.source === "library" || text.length < 4) { row.sugg.style.display = "none"; return; }
+    if (!wantsSuggestions(row) || row.dismissed || text.length < 4) { closeSuggestions(row, false); return; }
     var seq = (row.sseq = (row.sseq || 0) + 1);
     fetch(D.urls.suggest + "?q=" + encodeURIComponent(text)).then(function (r) { return r.json(); }).then(function (res) {
-      if (seq !== row.sseq || row.state.source === "library") return;      // a newer request or a pick superseded this one
+      // a newer request, a pick, a Close, or the cursor moving on all supersede this reply
+      if (seq !== row.sseq || !wantsSuggestions(row) || row.dismissed || document.activeElement !== row.desc) return;
       row.sugg.textContent = "";
       if (!res.rows.length) { row.sugg.style.display = "none"; return; }
-      row.sugg.appendChild(el("div", { "class": "sugg-head", text: "Norms that might apply — click one to use it, or ignore" }));
+      var close = el("button", { type: "button", "class": "btn small", "aria-label": "Close suggestions", text: "Close" });
+      close.addEventListener("click", function () { closeSuggestions(row, true); row.desc.focus(); });
+      row.sugg.appendChild(el("div", { "class": "sugg-head" }, [
+        el("span", { text: "Norms that might apply — click one to use it, or ignore" }), close]));
       res.rows.forEach(function (n) {
         var b = el("button", { type: "button", "class": "sugg-item" }, [
           el("b", { text: n.hours + " h" + (n.uom ? " per " + n.uom : "") }),
@@ -208,7 +240,7 @@
         row.sugg.appendChild(b);
       });
       var more = el("button", { type: "button", "class": "btn small", text: "Search all norms" });
-      more.addEventListener("click", function () { openPicker(row, text.split(/\s+/).slice(0, 3).join(" ")); });
+      more.addEventListener("click", function () { closeSuggestions(row, false); openPicker(row, text.split(/\s+/).slice(0, 3).join(" ")); });
       row.sugg.appendChild(more);
       row.sugg.style.display = "";
     }).catch(function () { row.sugg.style.display = "none"; });

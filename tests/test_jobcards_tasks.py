@@ -461,3 +461,24 @@ def test_format_and_tidy_hours():
     assert calc.format_hours(6) == "6" and calc.format_hours(6.0) == "6" and calc.format_hours(0) == "0" and calc.format_hours(None) == "0"
     assert calc.format_hours(4.5) == "4.50" and calc.format_hours(0.333) == "0.33"
     assert calc.tidy_hours(6.0) == 6 and isinstance(calc.tidy_hours(6.0), int) and calc.tidy_hours(4.567) == 4.57
+
+
+# ---- the norm suggestions can be closed, and are not offered where they do not belong ----------------------------
+def test_the_editor_script_can_close_the_suggestions_and_only_offers_them_where_they_belong(client):
+    c, _ = client
+    js = c.get("/jobcards/static/jobcards.js").get_data(as_text=True)
+    assert "function closeSuggestions" in js and "function wantsSuggestions" in js
+    assert '"Close suggestions"' in js and 'e.key === "Escape"' in js                   # a Close button, and Escape
+    assert "!row.state.role" in js and 'row.state.kind !== "note"' in js and "!row.norm.value.trim()" in js
+    assert "document.activeElement !== row.desc" in js                                  # a late reply is dropped
+    assert 'desc.addEventListener("blur"' in js and "row.dismissed" in js
+    css = c.get("/jobcards/static/jobcards.css").get_data(as_text=True)
+    assert ".sugg-head .btn" in css and "border-radius" not in css
+
+
+def test_the_suggest_endpoint_gives_nothing_for_an_unrelated_long_description(tmp_path):
+    c = create_app(tmp_path, "tester").test_client()                                     # with the norms module, unlike the fixture
+    q = "Install blind flange c/w DBB instrument valve assembly at TP-13."
+    assert c.get("/jobcards/api/norm-suggest", query_string={"q": q}).get_json() == {"available": True, "rows": []}
+    ok = c.get("/jobcards/api/norm-suggest", query_string={"q": "install junction box"}).get_json()
+    assert ok["available"] and ok["rows"]

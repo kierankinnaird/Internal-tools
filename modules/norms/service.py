@@ -1,6 +1,7 @@
 """Norm lookup logic. No web code in here, so it runs the same in any host."""
 from __future__ import annotations
 
+import math
 import re
 import sqlite3
 from dataclasses import dataclass
@@ -43,6 +44,23 @@ def suggest_tokens(text: str) -> List[str]:
             out.append(t)
     return out[:8]
 
+def words_needed(count: int) -> int:
+    """How many of a description's words a norm must contain to be suggested for it. A single word is enough for a
+    one-word description, two for a short one, and at least half for a longer one: two shared words out of eight is a
+    coincidence ('install' and 'instrument'), not a match."""
+    return 1 if count <= 1 else max(2, math.ceil(count / 2))
+
+
+def whole_number(value, default: int, low: int, high: int) -> int:
+    """A whole number from a query string or anywhere else, kept between low and high. Anything that is not a number
+    (such as 'abc' or '') gives the default instead of an error."""
+    try:
+        number = int(str(value).strip())
+    except (TypeError, ValueError):
+        return default
+    return max(low, min(number, high))
+
+
 @dataclass
 class SearchResult:
     total: int
@@ -79,7 +97,7 @@ class NormsService:
 
     def search(self, query: str = "", discipline: Optional[str] = None, item_id: Optional[str] = None,
                usable_only: bool = True, limit: int = 200) -> SearchResult:
-        limit = max(1, min(int(limit), MAX_LIMIT))
+        limit = whole_number(limit, default=200, low=1, high=MAX_LIMIT)
         where, args = [], []
         for token in query.lower().split():
             like = _like(token)
@@ -103,18 +121,18 @@ class NormsService:
         return SearchResult(total=total, rows=[dict(r) for r in rows])
 
     def suggest(self, text: str, limit: int = 5) -> SearchResult:
-        """Norms that fit free text such as a task description. Unlike search(), words are not all required: lines are ranked by how many of the words they contain, and need at least two (one if only one was given)."""
+        """Norms that fit free text such as a task description. Unlike search(), words are not all required: lines are ranked by how many of the words they contain, and need at least words_needed() of them, so a long description has to match a norm well before it is offered."""
         tokens = suggest_tokens(text)
         if not tokens:
             return SearchResult(0, [])
-        need = 1 if len(tokens) == 1 else 2
+        need = words_needed(len(tokens))
         score_parts, args = [], []
         for t in tokens:
             like = _like(t)
             score_parts.append("(CASE WHEN " + _WORD_CLAUSE + " THEN 1 ELSE 0 END)")
             args.extend([like, like, like])
         score = " + ".join(score_parts)
-        limit = max(1, min(int(limit), 20))
+        limit = whole_number(limit, default=5, low=1, high=20)
         sql = ("SELECT * FROM (SELECT key, discipline, item_id, item_no, item, row_desc, col_desc, uom, hours, status, "
                f"source_cell, ord, ({score}) AS score FROM norms WHERE status = 'OK') WHERE score >= ? "
                "ORDER BY score DESC, ord LIMIT ?")
