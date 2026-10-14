@@ -12,6 +12,7 @@ from flask import Flask, redirect, url_for
 
 from core.context import Context, SqliteAudit
 from core.modules import mount
+from hosts import security
 
 ROOT = Path(__file__).resolve().parent.parent
 ORDER = ["norms", "jobcards", "workpacks"]   # menu order and load order (providers before users)
@@ -27,10 +28,11 @@ def read_enabled(path: Optional[Path] = None) -> list:
 
 
 def create_app(userdata: Optional[Path] = None, user_name: Optional[str] = None,
-               modules: Optional[Iterable[str]] = None) -> Flask:
+               modules: Optional[Iterable[str]] = None, allowed_hosts: Optional[Iterable[str]] = None) -> Flask:
     userdata = Path(userdata or ROOT / "userdata")
     names = list(modules) if modules is not None else read_enabled()
     app = Flask(__name__, template_folder="templates", static_folder="static")
+    security.install(app, allowed_hosts)        # refuse other sites' requests; see hosts/security.py
     ctx = Context(user_name=user_name, audit=SqliteAudit(userdata / "audit.sqlite"), data_dir=userdata)
     app.config["CTX"] = ctx
     for name in names:
