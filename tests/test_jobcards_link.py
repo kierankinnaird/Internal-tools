@@ -152,6 +152,15 @@ def test_a_missing_or_duplicate_number_leaves_nothing_behind(link):
     assert counts(link) == (1, 1) and link.linked(2) == []
 
 
+def test_a_jobcard_number_clash_is_explained_and_leaves_nothing_behind(link):
+    link.create_for(1, "k", plain("FIRST", jobcard_prefix="NMC-BB18-"), count=2)
+    with pytest.raises(ValueError, match="Choose a different prefix"):
+        link.create_for(2, "k", plain("SECOND", jobcard_prefix="NMC-BB18-"), count=1)
+    assert counts(link) == (1, 2) and link.linked(2) == []
+    wp = link.create_for(2, "k", plain("SECOND", jobcard_prefix="NMC-BB19-"), count=1)
+    assert [j["number"] for j in link.linked(2)[0]["jobcards"]] == ["NMC-BB19-001"] and wp
+
+
 def test_a_failure_part_way_removes_the_workpack_and_its_jobcards(link, monkeypatch):
     real = Repo.create_jobcard
     calls = []

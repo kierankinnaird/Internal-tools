@@ -11,5 +11,6 @@ MODULE = Module(
     create_blueprint=create_blueprint,
     nav=[("Workpacks", "workpacks.index")],
     permissions=["workpacks.view", "workpacks.edit", "workpacks.fill"],
+    optional=["jobcards.link"],
     migrations_dir=Path(__file__).parent / "migrations",
 )

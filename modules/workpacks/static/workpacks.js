@@ -4,6 +4,22 @@ document.addEventListener("submit", function (event) {
   if (message && !window.confirm(message)) { event.preventDefault(); }
 });
 
+// New-workpack form: show only the jobcards options for the choice that is selected.
+(function () {
+  var radios = document.querySelectorAll("input[name=jc_mode]");
+  if (!radios.length) { return; }
+  function sync() {
+    var chosen = document.querySelector("input[name=jc_mode]:checked");
+    var mode = chosen ? chosen.value : "none";
+    document.querySelectorAll("[data-jc-panel]").forEach(function (panel) {
+      panel.hidden = panel.getAttribute("data-jc-panel") !== mode;
+    });
+  }
+  radios.forEach(function (radio) { radio.addEventListener("change", sync); });
+  window.addEventListener("pageshow", sync);
+  sync();
+})();
+
 // Tick all / tick none on the fill page.
 document.addEventListener("click", function (event) {
   var button = event.target.closest ? event.target.closest("[data-check]") : null;

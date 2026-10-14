@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "workpacks/_jobcards.html" import create_fields, link_field %}
 {% block title %}Workpacks{% endblock %}
 {% block head %}<link rel="stylesheet" href="{{ url_for('workpacks.static', filename='workpacks.css') }}">{% endblock %}
 {% block content %}
@@ -41,6 +42,18 @@
     <div><label for="mc1_no">MC1 number</label><input id="mc1_no" name="mc1_no" autocomplete="off"></div>
     <div><label for="site">Site</label><input id="site" name="site" autocomplete="off"></div>
   </div>
+  {% if jc %}
+  <fieldset class="jcset">
+    <legend>Jobcards</legend>
+    <div class="choices">
+      <label class="opt"><input type="radio" name="jc_mode" value="none" checked> None</label>
+      <label class="opt"><input type="radio" name="jc_mode" value="create"> Create jobcards now</label>
+      <label class="opt"><input type="radio" name="jc_mode" value="link"> Link existing jobcards workpacks</label>
+    </div>
+    <div data-jc-panel="create">{{ create_fields() }}</div>
+    <div data-jc-panel="link">{{ link_field(jc.available) }}</div>
+  </fieldset>
+  {% endif %}
   <p class="note">You are taken to the workpack's own page next, where the rest of the details and the certificates are added.</p>
   <button class="btn primary" type="submit">Create workpack</button>
 </form>

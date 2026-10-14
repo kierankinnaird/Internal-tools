@@ -1,0 +1,22 @@
+{# Form fields shared by the new-workpack form and the workpack page. Only used when the jobcards module is installed. #}
+{% macro create_fields() %}
+<div class="grid">
+  <div><label for="jc_number">Jobcards workpack number</label>
+    <input id="jc_number" name="jc_number" autocomplete="off" placeholder="Blank uses the Workpack number"></div>
+  <div><label for="jc_count">Number of jobcards</label>
+    <input id="jc_count" name="jc_count" type="number" min="0" max="100" value="0" inputmode="numeric"></div>
+  <div><label for="jc_prefix">Jobcard prefix</label>
+    <input id="jc_prefix" name="jc_prefix" autocomplete="off" maxlength="40" placeholder="e.g. NMC-BB18-"></div>
+</div>
+<p class="note">Jobcards are numbered from the prefix: NMC-BB18- gives NMC-BB18-001, NMC-BB18-002 and so on. Blank uses the jobcards workpack number.</p>
+{% endmacro %}
+
+{% macro link_field(available) %}
+{% if available %}
+<label for="jc_link">Jobcards workpacks not linked to anything</label>
+<select id="jc_link" name="jc_link" multiple size="{{ [available|length, 6]|min }}">
+  {% for w in available %}<option value="{{ w.id }}">{{ w.number }} &middot; {{ w.title }} ({{ w.jobcards }} jobcard{{ '' if w.jobcards == 1 else 's' }})</option>{% endfor %}
+</select>
+<p class="note">Hold Ctrl (or Cmd) to pick more than one.</p>
+{% else %}<p class="note flat">There are no unlinked jobcards workpacks to choose from.</p>{% endif %}
+{% endmacro %}

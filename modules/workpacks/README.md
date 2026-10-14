@@ -16,6 +16,26 @@ the old way of working, which was a separate Excel input sheet and the Workpack 
 Permissions: `workpacks.view`, `workpacks.edit`, `workpacks.fill`. People without `edit` get read-only pages and a 403 on
 any change. Every change, fill, download and import is written to the audit log.
 
+## Jobcards (optional)
+
+When the jobcards module is installed, a workpack can have jobcards:
+
+- **New workpack form:** choose *None*, *Create jobcards now* (a jobcards workpack number, how many blank jobcards, and
+  a jobcard prefix such as `NMC-BB18-`, which gives `NMC-BB18-001`, `NMC-BB18-002` and so on) or *Link existing jobcards
+  workpacks*. The workpack is created first. If the jobcards step then fails,
+  the workpack is kept and its page says what went wrong.
+- **A workpack's page:** a *Jobcards* panel lists the linked jobcards workpacks and their jobcards (task count, hours,
+  how many lines need checking), with forms to link another, create a new one or unlink.
+- **Deleting a workpack** keeps its jobcards and unlinks them.
+
+How it works: this module never imports jobcards. It asks the host for the optional service `jobcards.link` (see
+`modules/jobcards/link.py`). The link is a column in jobcards' own database holding this module's workpack id, so
+without the service nothing here changes. Imported workpacks do not get jobcards automatically.
+
+Permissions: seeing the panel needs `workpacks.view` and `jobcards.view`. Any change to jobcards (create, link, unlink,
+and the options on the new-workpack form) needs `workpacks.edit` and `jobcards.edit`; without both it is a 403 and the
+section is hidden.
+
 ## Where things live
 
 All under the app's data folder (`userdata/`, which git ignores). Nothing below is ever committed.

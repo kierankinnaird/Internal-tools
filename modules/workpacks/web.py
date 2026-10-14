@@ -2,7 +2,8 @@ from __future__ import annotations
 
 from typing import Dict, List, Optional
 
-from flask import Blueprint, Response, abort, redirect, render_template, request, send_from_directory, url_for
+from flask import (Blueprint, Response, abort, current_app, redirect, render_template, request, send_from_directory,
+                   url_for)
 
 from core.context import Context
 
@@ -64,6 +65,42 @@ def parse_spare(raw: str) -> Optional[int]:
     return int(raw)
 
 
+def parse_count(raw: str) -> int:
+    """How many blank jobcards to create: blank means none. The range itself is the jobcards module's to enforce."""
+    raw = (raw or "").strip()
+    if not raw:
+        return 0
+    if not (raw.isascii() and raw.isdigit()):
+        raise ValueError("The number of jobcards must be a whole number")
+    return int(raw) if len(raw) <= 9 else 10 ** 9
+
+
+MAX_PREFIX = 40
+
+
+def parse_prefix(raw: str) -> str:
+    """The start of every jobcard number, such as NMC-BB18-. Blank leaves it to the jobcards module's own default.
+    A prefix typed without a closing dash gets one, so NMC-BB18 still gives NMC-BB18-001."""
+    raw = (raw or "").strip()
+    if not raw:
+        return ""
+    if len(raw) > MAX_PREFIX:
+        raise ValueError(f"The jobcard prefix can be at most {MAX_PREFIX} characters")
+    return raw if raw[-1] in "-_/." else raw + "-"
+
+
+def parse_ids(values: List[str]) -> List[int]:
+    """Ids posted from a form, as whole numbers from 1, without repeats."""
+    ids: List[int] = []
+    for raw in values:
+        raw = (raw or "").strip()
+        if not (raw.isascii() and raw.isdigit() and len(raw) <= 9 and int(raw) >= 1):
+            raise ValueError("Those jobcards workpacks were not recognised")
+        if int(raw) not in ids:
+            ids.append(int(raw))
+    return ids
+
+
 def run_title(meta: Dict) -> str:
     """'3 ok' or '3 ok, 1 not ok' for a saved run."""
     return f"{meta['ok']} ok" + (f", {meta['problems']} not ok" if meta["problems"] else "")
@@ -98,6 +135,75 @@ def create_blueprint(ctx: Context) -> Blueprint:
             abort(404)
         return wp
 
+    # ---- jobcards: only there when the jobcards module is installed --------------------------------
+    def jobcards():
+        return ctx.services.get("jobcards.link")
+
+    def can_edit_jobcards():
+        return ctx.can("workpacks.edit") and ctx.can("jobcards.edit")
+
+    def need_jobcards_edit():
+        """The jobcards service, for a change to jobcards. 404 when the module is absent, 403 without both permissions."""
+        service = jobcards()
+        if service is None:
+            abort(404)
+        if not can_edit_jobcards():
+            abort(403)
+        return service
+
+    def jobcards_form():
+        """What the new-workpack form offers, or None when there is nothing to offer."""
+        service = jobcards()
+        if service is None or not can_edit_jobcards():
+            return None
+        return {"available": service.available()}
+
+    def jobcards_panel(wp_id):
+        """What a workpack page shows about its jobcards, or None to leave the panel out."""
+        service = jobcards()
+        if service is None or not (ctx.can("workpacks.view") and ctx.can("jobcards.view")):
+            return None
+        panel = {"linked": service.linked(wp_id), "can_edit": can_edit_jobcards(), "available": []}
+        if panel["can_edit"]:
+            panel["available"] = service.available()
+        return panel
+
+    def jobcards_step(action):
+        """Run one jobcards change. Returns None when it worked, or a sentence saying why it did not."""
+        try:
+            action()
+        except ValueError as e:
+            return str(e)
+        except Exception:
+            current_app.logger.exception("The jobcards step failed")
+            return "Something went wrong while saving the jobcards"
+        return None
+
+    def create_linked_jobcards(wp_id, form):
+        """A new jobcards workpack, linked to this workpack, from the details already typed here."""
+        wp = wp_or_404(wp_id)
+        number = form.get("jc_number", "").strip() or wp["workpack_no"]
+        if not number:
+            raise ValueError("A jobcards workpack number is required. Type one, or fill in the Workpack number")
+        data = {"number": number, "title": wp["title"], "fcp_no": wp["project_no"], "location": wp["location"],
+                "jobcard_prefix": parse_prefix(form.get("jc_prefix"))}
+        jobcards().create_for(wp_id, ctx.current_user(), data, parse_count(form.get("jc_count")))
+
+    def link_existing_jobcards(wp_id, form):
+        service = jobcards()
+        ids = parse_ids(form.getlist("jc_link"))
+        if not ids:
+            raise ValueError("Choose at least one jobcards workpack to link")
+        done, problems = 0, []
+        for jc_wp_id in ids:
+            try:
+                service.link(jc_wp_id, wp_id, ctx.current_user())
+                done += 1
+            except ValueError as e:
+                problems.append(str(e))
+        if problems:
+            raise ValueError((f"{done} of {len(ids)} linked. " if done else "") + " ".join(problems))
+
     def cert_or_404(cert_pk):
         cert = repo.get_certificate(cert_pk)
         if not cert:
@@ -115,7 +221,7 @@ def create_blueprint(ctx: Context) -> Blueprint:
     def list_page(problems=None, status=200):
         page = render_template("workpacks/index.html", workpacks=repo.list_workpacks(),
                                banner=template_banner(store.status()), error=request.args.get("error"),
-                               can_edit=ctx.can("workpacks.edit"), problems=problems or [])
+                               can_edit=ctx.can("workpacks.edit"), problems=problems or [], jc=jobcards_form())
         return page, status
 
     @bp.get("/")
@@ -126,10 +232,20 @@ def create_blueprint(ctx: Context) -> Blueprint:
     @bp.post("/")
     def create():
         need("workpacks.edit")
+        mode = request.form.get("jc_mode", "none")
+        if mode not in ("create", "link"):
+            mode = "none"
+        if mode != "none":
+            need_jobcards_edit()                  # refused before anything is created
         try:
             wp_id = repo.create_workpack(request.form, ctx.current_user())
         except ValueError as e:
             return redirect(url_for("workpacks.index", error=str(e)))
+        if mode != "none":
+            step = create_linked_jobcards if mode == "create" else link_existing_jobcards
+            problem = jobcards_step(lambda: step(wp_id, request.form))
+            if problem:                           # the workpack is kept; only the jobcards step failed
+                return back(wp_id, f"The workpack was created, but the jobcards step failed: {problem}")
         return redirect(url_for("workpacks.workpack", wp_id=wp_id))
 
     @bp.post("/import")
@@ -159,7 +275,8 @@ def create_blueprint(ctx: Context) -> Blueprint:
         return render_template("workpacks/workpack.html", wp=wp, groups=groups, certs=certs,
                                forms=form_codes(store.folder), error=request.args.get("error"),
                                can_edit=ctx.can("workpacks.edit"), can_fill=ctx.can("workpacks.fill"),
-                               imported=bool(request.args.get("imported")))
+                               imported=bool(request.args.get("imported")), jc=jobcards_panel(wp_id),
+                               jc_installed=jobcards() is not None)
 
     @bp.post("/<int:wp_id>")
     def update_workpack(wp_id):
@@ -175,9 +292,35 @@ def create_blueprint(ctx: Context) -> Blueprint:
     def delete_workpack(wp_id):
         need("workpacks.edit")
         wp_or_404(wp_id)
+        service = jobcards()
+        if service is not None:
+            # Whoever may delete a workpack also lets go of its jobcards: a link left behind could attach to a later
+            # workpack that reuses this id. The jobcards themselves are kept.
+            service.unlink_all(wp_id, ctx.current_user())
         repo.delete_workpack(wp_id)
         saved_runs.delete_all(wp_id)
         return redirect(url_for("workpacks.index"))
+
+    # ---- jobcards on a workpack ----------------------------------------------------------------------
+    @bp.post("/<int:wp_id>/jobcards/link")
+    def link_jobcards(wp_id):
+        need_jobcards_edit()
+        wp_or_404(wp_id)
+        return back(wp_id, jobcards_step(lambda: link_existing_jobcards(wp_id, request.form)), "#jobcards")
+
+    @bp.post("/<int:wp_id>/jobcards/create")
+    def create_jobcards(wp_id):
+        need_jobcards_edit()
+        wp_or_404(wp_id)
+        return back(wp_id, jobcards_step(lambda: create_linked_jobcards(wp_id, request.form)), "#jobcards")
+
+    @bp.post("/<int:wp_id>/jobcards/<int:jc_wp_id>/unlink")
+    def unlink_jobcards(wp_id, jc_wp_id):
+        service = need_jobcards_edit()
+        wp_or_404(wp_id)
+        if not any(w["id"] == jc_wp_id for w in service.linked(wp_id)):
+            return back(wp_id, "That jobcards workpack is not linked to this workpack", "#jobcards")
+        return back(wp_id, jobcards_step(lambda: service.unlink(jc_wp_id, ctx.current_user())), "#jobcards")
 
     # ---- certificates ------------------------------------------------------------------------
     @bp.post("/<int:wp_id>/certificates")

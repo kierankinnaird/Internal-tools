@@ -97,8 +97,10 @@ class JobcardsLink:
                 db.execute("UPDATE workpack SET workpacks_ref=? WHERE id=?", (ref, wp_id))
             for _ in range(count):
                 self._repo.create_jobcard(wp_id, user, trade)
-        except Exception:
+        except Exception as e:
             self._repo.delete_workpack(wp_id)                   # takes its jobcards with it
+            if isinstance(e, sqlite3.IntegrityError):           # jobcard numbers are unique across all workpacks
+                raise ValueError("Jobcards with that prefix already exist. Choose a different prefix") from e
             raise
         self._audit("workpack_linked", f"{values['number']} -> workpack {ref}")
         return wp_id

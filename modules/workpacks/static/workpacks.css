@@ -97,6 +97,20 @@
 @media (max-width: 760px) { .wp .optrow { grid-template-columns: 1fr; } }
 
 
+/* jobcards (only when the jobcards module is installed) */
+.wp [hidden] { display: none; }
+.wp label.opt { display: flex; gap: 8px; align-items: center; margin: 0; font-size: 15px; font-weight: 700;
+                text-transform: none; letter-spacing: 0; color: var(--ink); cursor: pointer; }
+.wp .opt input { width: 18px; height: 18px; accent-color: var(--ink); }
+.wp .choices { display: flex; flex-wrap: wrap; gap: 8px 24px; margin-bottom: 14px; }
+.wp .jcset { margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--line); }
+.wp .jcwp, .wp .jcform { margin-bottom: 14px; }
+.wp .jchead { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 10px; }
+.wp .jchead form.inline { margin-right: 0; }
+.wp .jcform fieldset { margin-bottom: 14px; }
+.wp select[multiple] { padding: 4px; }
+
+
 /* import from excel */
 .wp .importrow { display: grid; grid-template-columns: 1fr auto; gap: 12px; align-items: end; }
 .wp .problems { margin: 8px 0 0; padding-left: 20px; }
