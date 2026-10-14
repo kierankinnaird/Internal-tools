@@ -515,7 +515,7 @@ def create_blueprint(ctx: Context) -> Blueprint:
         data = saved_runs.zip_bytes(wp_id, run_id)
         if data is None:
             abort(404)
-        repo._audit("workpack_downloaded", f"{meta['title']}: run {run_id}")
+        repo.audit("workpack_downloaded", f"{meta['title']}: run {run_id}")
         name = "".join(ch if ch.isascii() and ch.isalnum() else "-" for ch in meta["title"]).strip("-")[:60] or "workpack"
         return Response(data, mimetype="application/zip",
                         headers={"Content-Disposition": f'attachment; filename="{name}-{run_id}.zip"'})
@@ -528,7 +528,7 @@ def create_blueprint(ctx: Context) -> Blueprint:
         if name == runs.META or name.endswith(".REJECTED"):
             abort(404)
         response = send_from_directory(folder, name, as_attachment=True)     # a missing file is a 404 here
-        repo._audit("workpack_downloaded", f"run {run_id}: {name}")
+        repo.audit("workpack_downloaded", f"run {run_id}: {name}")
         return response
 
     @bp.post("/<int:wp_id>/runs/<run_id>/delete")
@@ -536,7 +536,7 @@ def create_blueprint(ctx: Context) -> Blueprint:
         need("workpacks.fill")
         meta = run_or_404(wp_id, run_id)
         saved_runs.delete(wp_id, run_id)
-        repo._audit("workpack_run_deleted", f"{meta['title']}: run {run_id}")
+        repo.audit("workpack_run_deleted", f"{meta['title']}: run {run_id}")
         return redirect(url_for("workpacks.fill_page", wp_id=wp_id))
 
     return bp

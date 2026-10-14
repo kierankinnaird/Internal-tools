@@ -28,6 +28,11 @@ class Repo:
         self.db_path = Path(db_path)
         self._audit = audit
 
+    def audit(self, action: str, detail: str = "") -> None:
+        """Write an entry to the audit log, for the things done with a workpack that are not changes to its rows
+        (filling forms, downloads, an import). Everything that changes a row is audited by this class itself."""
+        self._audit(action, detail)
+
     @contextmanager
     def _db(self):
         db = sqlite3.connect(self.db_path)

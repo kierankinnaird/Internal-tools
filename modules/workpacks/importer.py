@@ -155,6 +155,6 @@ def import_workbook(repo: Repo, data: bytes, filename: str, user: str) -> Import
     except Exception as e:
         repo.delete_workpack(wp_id)
         raise ImportProblem([str(e) if isinstance(e, ValueError) else "The workbook could not be saved"])
-    repo._audit("workpack_imported", f"{parsed.workpack['title']}: {len(parsed.certificates)} certificates, "
+    repo.audit("workpack_imported", f"{parsed.workpack['title']}: {len(parsed.certificates)} certificates, "
                                      f"{parsed.row_count} table rows, from {safe_name(filename)}")
     return ImportResult(wp_id, len(parsed.certificates), parsed.row_count)

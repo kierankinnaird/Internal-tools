@@ -119,5 +119,5 @@ class FillService:
             report.notes.append("These templates differ from the templates pack: " + ", ".join(status.differs))
         if not status.manifest_found:
             report.notes.append("The templates folder has no MANIFEST.csv, so the template versions were not checked")
-        self.repo._audit("workpack_filled", f"{title}: {report.ok} ok, {report.problems} not ok")
+        self.repo.audit("workpack_filled", f"{title}: {report.ok} ok, {report.problems} not ok")
         return report
