@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import getpass
 import sqlite3
+from contextlib import closing
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterable, Optional
@@ -18,7 +19,7 @@ class SqliteAudit:
     def __init__(self, path: Path):
         self.path = Path(path)
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        with sqlite3.connect(self.path) as db:
+        with closing(sqlite3.connect(self.path)) as db, db:      # closed when done; "with db" commits (or rolls back)
             db.execute(
                 "CREATE TABLE IF NOT EXISTS audit ("
                 "id INTEGER PRIMARY KEY, at TEXT NOT NULL, user TEXT NOT NULL, "
@@ -26,7 +27,7 @@ class SqliteAudit:
             )
 
     def log(self, user: str, module: str, action: str, detail: str = "") -> None:
-        with sqlite3.connect(self.path) as db:
+        with closing(sqlite3.connect(self.path)) as db, db:
             db.execute(
                 "INSERT INTO audit (at, user, module, action, detail) VALUES (?,?,?,?,?)",
                 (datetime.now(timezone.utc).isoformat(timespec="seconds"), user, module, action, detail),

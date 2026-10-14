@@ -4,6 +4,7 @@ from __future__ import annotations
 import math
 import re
 import sqlite3
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Optional
@@ -76,10 +77,15 @@ class NormsService:
     def __init__(self, db_path: Path = DEFAULT_DB):
         self.db_path = Path(db_path)
 
-    def _db(self) -> sqlite3.Connection:
+    @contextmanager
+    def _db(self):
+        """A read-only connection for one piece of work, closed afterwards (sqlite3's own 'with' only commits)."""
         db = sqlite3.connect(f"file:{self.db_path.as_posix()}?mode=ro", uri=True)
         db.row_factory = sqlite3.Row
-        return db
+        try:
+            yield db
+        finally:
+            db.close()
 
     def disciplines(self) -> List[str]:
         with self._db() as db:
