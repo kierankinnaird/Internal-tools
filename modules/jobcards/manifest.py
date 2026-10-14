@@ -2,6 +2,7 @@ from pathlib import Path
 
 from core.modules import Module
 
+from .hours import JobcardsHours
 from .link import JobcardsLink
 from .web import create_blueprint
 
@@ -9,6 +10,7 @@ from .web import create_blueprint
 def _register(ctx):
     ctx.services.register("jobcards.link", JobcardsLink(
         ctx.data_dir / "jobcards.sqlite", audit=lambda a, d: ctx.audit("jobcards", a, d)))
+    ctx.services.register("jobcards.hours", JobcardsHours(ctx.data_dir / "jobcards.sqlite"))
 
 
 MODULE = Module(
@@ -18,7 +20,7 @@ MODULE = Module(
     create_blueprint=create_blueprint,
     nav=[("Jobcards", "jobcards.index")],
     permissions=["jobcards.view", "jobcards.edit", "jobcards.factor"],
-    provides=["jobcards.link"],
+    provides=["jobcards.link", "jobcards.hours"],
     optional=["norms.lookup"],
     migrations_dir=Path(__file__).parent / "migrations",
     register_services=_register,

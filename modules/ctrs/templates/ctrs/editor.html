@@ -1,0 +1,118 @@
+{% extends "base.html" %}
+{% block title %}{{ ctr.title }}{% endblock %}
+{% block head %}<link rel="stylesheet" href="{{ url_for('ctrs.static', filename='ctrs.css') }}">{% endblock %}
+{% block content %}
+<div class="ctr" id="ctr" data-save-url="{{ url_for('ctrs.save', ctr_id=ctr.id) }}" data-preview-url="{{ url_for('ctrs.preview', ctr_id=ctr.id) }}"
+     data-can-edit="{{ 1 if can_edit else 0 }}">
+<div class="crumbs"><a href="{{ url_for('ctrs.index') }}">CTRs</a> / {{ ctr.title }}</div>
+<h1>{{ ctr.title }}</h1>
+<p class="lede">Last changed {{ ctr.updated_at[:16].replace('T', ' ') }} UTC by {{ ctr.updated_by }}.</p>
+{% if error %}<div class="error" role="alert">{{ error }}</div>{% endif %}
+{% if imported %}<div class="notice" role="status">{{ imported }} trade line{{ '' if imported == '1' else 's' }} brought in from the jobcards. Now say who takes those hours, in the Resources table below.</div>{% endif %}
+<div class="error" id="msg" role="alert" hidden></div>
+
+<h2>Header</h2>
+<div class="grid">
+  {% for key, label in header_fields %}
+  <div><label for="f-{{ key }}">{{ label }}</label>
+    <input id="f-{{ key }}" data-field="{{ key }}" {% if key == 'ctr_date' %}type="date"{% endif %} value="{{ ctr[key] }}" {% if not can_edit %}readonly{% endif %}></div>
+  {% endfor %}
+</div>
+<div class="row">
+  <div><label for="f-objectives">Objectives</label><textarea id="f-objectives" data-field="objectives" rows="5" {% if not can_edit %}readonly{% endif %}>{{ ctr.objectives }}</textarea></div>
+  <div><label for="f-inputs">Input requirements</label><textarea id="f-inputs" data-field="inputs" rows="5" {% if not can_edit %}readonly{% endif %}>{{ ctr.inputs }}</textarea></div>
+</div>
+
+{% if snapshots is not none %}
+<h2 id="hours-source">Hours from the jobcards</h2>
+{% if ctr.source_text %}<p class="note">Built from: <b>{{ ctr.source_text }}</b></p>{% endif %}
+{% if snapshots %}
+{% if can_edit %}
+<form method="post" id="import-form" action="{{ url_for('ctrs.import_hours', ctr_id=ctr.id) }}" class="row">
+  <div><label for="snapshot_id">Jobcards snapshot</label>
+    <select id="snapshot_id" name="snapshot_id">
+      {% for s in snapshots %}<option value="{{ s.id }}" {% if s.id == ctr.source_snapshot_id %}selected{% endif %}>{{ s.workpack_number }} — {{ s.label or 'Snapshot' }} — {{ s.created_at[:10] }} — {{ s.total|ctr_hours }} h</option>{% endfor %}
+    </select></div>
+  <div class="shrink"><button class="btn dark" type="submit">Import hours</button></div>
+</form>
+{% endif %}
+<p class="note">A snapshot is the hours by trade frozen on the day it was taken. Importing adds one scope line per trade (the trade is the line's group), and replaces the lines of an earlier import. Lines you typed yourself stay.</p>
+{% else %}<div class="empty">No snapshots yet. Take one from a workpack's page in Jobcards, then come back here.</div>{% endif %}
+{% endif %}
+
+<h2 id="scope">Scope of work</h2>
+<div class="row">
+  <div style="flex:3 1 320px"><label for="f-scope_intro">Heading above the table</label><input id="f-scope_intro" data-field="scope_intro" value="{{ ctr.scope_intro }}" {% if not can_edit %}readonly{% endif %}></div>
+  <div><label for="f-pool1_label">First hours column</label><input id="f-pool1_label" data-field="pool1_label" value="{{ ctr.pool1_label }}" {% if not can_edit %}readonly{% endif %}></div>
+  <div><label for="f-pool2_label">Second hours column</label><input id="f-pool2_label" data-field="pool2_label" value="{{ ctr.pool2_label }}" {% if not can_edit %}readonly{% endif %}></div>
+</div>
+<table class="rows lines" id="lines">
+  <thead><tr><th>Activity / deliverable</th><th>A/D</th><th>WBS</th><th>Group</th><th class="num">Qty</th>
+    <th class="num"><span data-pool="1">{{ ctr.pool1_label }}</span> norm</th><th class="num"><span data-pool="2">{{ ctr.pool2_label }}</span> norm</th>
+    <th class="num">Factor</th><th class="num"><span data-pool="1">{{ ctr.pool1_label }}</span> h</th><th class="num"><span data-pool="2">{{ ctr.pool2_label }}</span> h</th><th></th></tr></thead>
+  <tbody></tbody>
+</table>
+<datalist id="groups"></datalist>
+{% if can_edit %}<p class="actions"><button type="button" class="btn" id="add-line">Add line</button>
+  <button type="button" class="btn" id="add-allowance">Add allowance (% of all other hours)</button></p>{% endif %}
+<p class="note">Hours are quantity × norm × factor, rounded up to a whole hour. To use hours you already know, type them in the hours column instead. A <b>group</b> names lines (a trade, say) so a resource can take its hours from just those lines. An <b>allowance</b> adds a percentage of every other line's hours to the first column.</p>
+
+<div class="row">
+  <div><label for="f-scope_notes">Scope notes</label><textarea id="f-scope_notes" data-field="scope_notes" rows="6" {% if not can_edit %}readonly{% endif %}>{{ ctr.scope_notes }}</textarea></div>
+</div>
+<div class="row">
+  <div><label for="f-assumptions">Assumptions</label><textarea id="f-assumptions" data-field="assumptions" rows="6" {% if not can_edit %}readonly{% endif %}>{{ ctr.assumptions }}</textarea></div>
+  <div><label for="f-exclusions">Exclusions</label><textarea id="f-exclusions" data-field="exclusions" rows="6" {% if not can_edit %}readonly{% endif %}>{{ ctr.exclusions }}</textarea></div>
+</div>
+<div class="grid">
+  {% for key, label in [('commencement', 'Commencement date'), ('completion', 'Completion date'), ('duration', 'Duration'), ('expenses', 'Expenses')] %}
+  <div><label for="f-{{ key }}">{{ label }}</label><input id="f-{{ key }}" data-field="{{ key }}" value="{{ ctr[key] }}" {% if not can_edit %}readonly{% endif %}></div>
+  {% endfor %}
+</div>
+
+<h2 id="resources-h">Resources</h2>
+<p class="note">Each resource takes a percentage of the hours of one source: a whole hours column, a group of lines (a trade), or hours you type in. Hours are shared out in whole numbers that add back up to the source's hours. Rates are typed in.</p>
+<table class="rows resources" id="resources">
+  <thead><tr><th>Resource</th><th>Takes hours from</th><th class="num">Split %</th><th class="num">Typed hours</th><th class="num">Cost £ / hour</th><th class="num">Hours</th><th class="num">Total</th><th></th></tr></thead>
+  <tbody></tbody>
+  <tfoot><tr class="total"><td colspan="5">Total</td><td class="num" id="t-res-hours">0</td><td class="num" id="t-res-cost">£0.00</td><td></td></tr></tfoot>
+</table>
+{% if can_edit %}<p class="actions"><button type="button" class="btn" id="add-resource">Add resource</button></p>{% endif %}
+
+<h2>Additions</h2>
+<table class="rows additions" id="additions">
+  <thead><tr><th>Addition</th><th class="num">Cost £ / unit</th><th class="num">Units</th><th class="num">Total</th><th></th></tr></thead>
+  <tbody></tbody>
+  <tfoot><tr class="total"><td colspan="3">Total</td><td class="num" id="t-add-cost">£0.00</td><td></td></tr></tfoot>
+</table>
+{% if can_edit %}<p class="actions"><button type="button" class="btn" id="add-addition">Add addition</button></p>{% endif %}
+
+<h2>Payment terms and basis</h2>
+<div class="row">
+  <div class="shrink"><label for="f-payment_terms">Payment terms</label>
+    <select id="f-payment_terms" data-field="payment_terms" {% if not can_edit %}disabled{% endif %}>{% for t in terms %}<option {% if t == ctr.payment_terms %}selected{% endif %}>{{ t }}</option>{% endfor %}</select></div>
+  <div><label for="f-basis">Basis of proposal</label><textarea id="f-basis" data-field="basis" rows="3" {% if not can_edit %}readonly{% endif %}>{{ ctr.basis }}</textarea></div>
+</div>
+
+<h2>Checks</h2>
+<ul class="warnings" id="warnings"></ul>
+<p class="note" id="no-warnings" hidden>Nothing to check.</p>
+
+<div class="savebar">
+  <span class="totals">Hours <b id="s-hours">0</b> &nbsp; Cost <b id="s-cost">£0.00</b></span>
+  <span class="spacer"></span>
+  <span class="note" id="status"></span>
+  <a class="btn" href="{{ url_for('ctrs.export_xlsx', ctr_id=ctr.id) }}" id="download">Download Excel</a>
+  {% if can_edit %}<button type="button" class="btn primary" id="save">Save</button>{% endif %}
+</div>
+
+{% if can_edit %}
+<div class="more">
+  <form method="post" action="{{ url_for('ctrs.duplicate', ctr_id=ctr.id) }}" class="inline"><button class="btn" type="submit">Duplicate this CTR</button></form>
+  <form method="post" action="{{ url_for('ctrs.delete', ctr_id=ctr.id) }}" class="inline" onsubmit="return confirm('Delete this CTR?')"><button class="btn danger" type="submit">Delete this CTR</button></form>
+</div>
+{% endif %}
+</div>
+<script type="application/json" id="ctr-data">{{ state|tojson }}</script>
+{% endblock %}
+{% block scripts %}<script src="{{ url_for('ctrs.static', filename='ctrs.js') }}"></script>{% endblock %}

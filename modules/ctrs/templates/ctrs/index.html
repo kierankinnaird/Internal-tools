@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% block title %}CTRs{% endblock %}
+{% block head %}<link rel="stylesheet" href="{{ url_for('ctrs.static', filename='ctrs.css') }}">{% endblock %}
+{% block content %}
+<div class="ctr">
+<h1>CTRs</h1>
+<p class="lede">A CTR sets out the scope, hours and cost of a piece of work. Hours can come from a jobcards snapshot, shared between resources by the percentages you type, and the finished CTR downloads as an Excel sheet in the usual layout.</p>
+{% if error %}<div class="error" role="alert">{{ error }}</div>{% endif %}
+{% if can_edit %}
+<details class="new" {% if not ctrs %}open{% endif %}>
+  <summary>New CTR</summary>
+  <form method="post" action="{{ url_for('ctrs.create') }}">
+    <div class="row">
+      <div style="flex:2 1 280px"><label for="title">CTR title</label><input id="title" name="title" required></div>
+      <div><label for="ctr_no">CTR no.</label><input id="ctr_no" name="ctr_no"></div>
+      <div><label for="client">Client</label><input id="client" name="client"></div>
+    </div>
+    <div class="row">
+      <div><label for="project_name">Project name</label><input id="project_name" name="project_name"></div>
+      <div><label for="project_title">Project title</label><input id="project_title" name="project_title"></div>
+    </div>
+    <button class="btn primary" type="submit">Create CTR</button>
+  </form>
+</details>
+{% endif %}
+{% if ctrs %}
+<table>
+  <thead><tr><th>CTR</th><th>No.</th><th>Client</th><th>Project</th><th class="num">Hours</th><th class="num">Cost</th><th>Last changed</th></tr></thead>
+  <tbody>{% for c in ctrs %}
+    <tr><td><a href="{{ url_for('ctrs.editor', ctr_id=c.id) }}"><b>{{ c.title }}</b></a></td><td>{{ c.ctr_no }}</td><td>{{ c.client }}</td>
+        <td>{{ c.project_title or c.project_name }}</td><td class="num">{{ c.hours|ctr_hours }}</td><td class="num">{{ c.cost|ctr_gbp }}</td>
+        <td>{{ c.updated_at[:10] }} · {{ c.updated_by }}</td></tr>
+  {% endfor %}</tbody>
+</table>
+{% else %}<div class="empty">No CTRs yet. Create the first one above.</div>{% endif %}
+</div>
+{% endblock %}
