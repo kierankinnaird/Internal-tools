@@ -13,7 +13,7 @@ def tables(db_path):
 
 def test_jobcards_schema_is_created(tmp_path):
     db = tmp_path / "jobcards.sqlite"
-    assert migrate(db, "jobcards", JOBCARDS) == 2
+    assert migrate(db, "jobcards", JOBCARDS) == 3
     assert {"workpack", "jobcard", "jobcard_flag", "drawing", "task", "snapshot", "snapshot_line"} <= tables(db)
 
 
