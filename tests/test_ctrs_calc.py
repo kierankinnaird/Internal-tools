@@ -247,3 +247,31 @@ def test_a_resource_with_no_hours_is_not_asked_for_a_rate():
 def test_the_warnings_use_the_column_names_the_ctr_gives_its_hours():
     c = calc.compute(dict(ctr([line(description="x", qty=1, eng_norm=5)], []), pool1_label="Hours"))
     assert c["warnings"] == ["No resource takes the Hours hours of: x."]
+
+
+# ---- split totals and progress, for the page's inline checks and checklist -------------------------------------
+def test_each_sources_split_total_is_given_for_the_page_to_show():
+    lines = [line(grp="P/Fitter", eng_override=100)]
+    out = calc.compute(ctr(lines, [resource("A", "group:P/Fitter", 60), resource("B", "group:P/Fitter", 40), resource("C", "pool2", 70)]))
+    assert out["split_totals"] == {"group:P/Fitter": 100, "pool2": 70}
+    assert calc.compute(ctr())["split_totals"] == {}
+
+
+def test_the_steps_tick_off_as_a_ctr_is_filled_in():
+    lines = [line(grp="P/Fitter", eng_override=100)]
+    assert calc.compute(ctr())["steps"] == {"hours": False, "resources": False, "rates": False}
+    assert calc.compute(ctr(lines))["steps"] == {"hours": True, "resources": False, "rates": False}
+    half = calc.compute(ctr(lines, [resource("A", "pool1", 60, 5)]))["steps"]
+    assert half == {"hours": True, "resources": False, "rates": True}              # 60% is not all of it
+    full = calc.compute(ctr(lines, [resource("A", "pool1", 60), resource("B", "pool1", 40)]))["steps"]
+    assert full == {"hours": True, "resources": True, "rates": False}
+    done = calc.compute(ctr(lines, [resource("A", "pool1", 60, 5), resource("B", "pool1", 40, 6)]))["steps"]
+    assert done == {"hours": True, "resources": True, "rates": True}
+
+
+def test_hours_shared_twice_or_to_a_missing_group_stop_the_resources_step_ticking():
+    lines = [line(grp="G", eng_override=100)]
+    twice = calc.compute(ctr(lines, [resource("A", "pool1", 100, 1), resource("B", "group:G", 100, 1)]))["steps"]
+    assert twice["resources"] is False
+    gone = calc.compute(ctr(lines, [resource("A", "group:Gone", 100, 1), resource("B", "pool1", 100, 1)]))["steps"]
+    assert gone["resources"] is False

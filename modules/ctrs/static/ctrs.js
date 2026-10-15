@@ -10,6 +10,7 @@
   var linesBody = $("#lines tbody"), resBody = $("#resources tbody"), addBody = $("#additions tbody");
   var msg = $("#msg"), status = $("#status");
   var dirty = false, timer = null, seq = 0, msgKind = "";
+  var lastGroups = Object.keys(data.computed.groups), lastWarnings = data.computed.warnings.length;
   var lastOptions = data.computed.options;          // where hours can come from, as last worked out; new rows start with these
 
   function el(tag, attrs, kids) {
@@ -77,7 +78,7 @@
     tr.appendChild(cell(field("description", "Description", d.description, { area: true })));
     tr.appendChild(cell(flag));
     tr.appendChild(cell(field("wbs", "WBS", d.wbs)));
-    tr.appendChild(cell(field("grp", "Group", d.grp, { list: "groups" })));
+    tr.appendChild(cell(field("grp", "Trade or group", d.grp, { list: "groups" })));
     tr.appendChild(cell(allowance ? [qty, el("span", { class: "unit", text: "% of all", title: "A percentage of every other line's hours, added to the first column" })] : qty));
     tr.appendChild(cell(norm1)); tr.appendChild(cell(norm2)); tr.appendChild(cell(factor));
     tr.appendChild(cell(field("eng_override", "First column hours", d.eng_override, { num: true, placeholder: "0" })));
@@ -89,13 +90,16 @@
 
   function addResource(d) {
     var tr = el("tr");
-    var src = select("source", "Takes hours from", [[d.source || "pool1", d.source || "pool1"]], d.source || "pool1");
+    var src = select("source", "Hours come from", [[d.source || "pool1", d.source || "pool1"]], d.source || "pool1");
     setOptions(src, lastOptions);
     var hours = el("td", { class: "calc" }), cost = el("td", { class: "calc" });
     hours.setAttribute("data-out", "hours"); cost.setAttribute("data-out", "cost");
-    tr.appendChild(cell(field("name", "Resource name", d.name)));
+    var note = el("span", { class: "splitnote" });
+    note.setAttribute("data-out", "splitnote");
+    if (!d._fresh && d.split_pct != null) tr.dataset.touched = "1";      // a split someone chose is not overwritten by the helper
+    tr.appendChild(cell(field("name", "Resource name", d.name, { placeholder: "e.g. Lead Pipefitter" })));
     tr.appendChild(cell(src));
-    tr.appendChild(cell(field("split_pct", "Split percent", d.split_pct == null ? 100 : d.split_pct, { num: true })));
+    tr.appendChild(cell([field("split_pct", "Split percent", d.split_pct == null ? 100 : d.split_pct, { num: true }), note]));
     tr.appendChild(cell(field("fixed_hours", "Typed hours", d.fixed_hours, { num: true })));
     tr.appendChild(cell(field("rate", "Cost per hour", d.rate, { num: true })));
     tr.appendChild(hours); tr.appendChild(cost);
@@ -178,6 +182,10 @@
       h.textContent = String(r.hours);
       if (r.source_hours != null) h.appendChild(el("span", { class: "unit", text: " of " + r.source_hours }));
       tr.querySelector('[data-out="cost"]').textContent = gbp(r.cost);
+      var source = tr.querySelector('[data-k="source"]').value, sharing = rowsWithSource(source).length;
+      var total = c.split_totals[source], noteEl = tr.querySelector('[data-out="splitnote"]');
+      noteEl.textContent = source !== "fixed" && total != null && (sharing > 1 || total !== 100) ? "= " + total + "%" : "";
+      noteEl.className = "splitnote" + (total === 100 ? " ok" : " off");
     });
     Array.prototype.forEach.call(addBody.children, function (tr, i) {
       tr.querySelector('[data-out="cost"]').textContent = gbp((c.additions[i] || { cost: 0 }).cost);
@@ -190,6 +198,44 @@
     list.textContent = "";
     c.warnings.forEach(function (w) { list.appendChild(el("li", { text: w })); });
     $("#no-warnings").hidden = c.warnings.length > 0;
+    lastWarnings = c.warnings.length; lastGroups = Object.keys(c.groups);
+    var badge = $("#checks-badge");
+    badge.hidden = lastWarnings === 0;
+    badge.textContent = lastWarnings + (lastWarnings === 1 ? " thing to check" : " things to check");
+    var next = null;
+    root.querySelectorAll("#steps li").forEach(function (li) {
+      var key = li.getAttribute("data-step"), done = key !== "download" && !!c.steps[key];
+      li.classList.toggle("done", done);
+      li.classList.remove("next");
+      if (!done && !next && key !== "download") next = li;
+    });
+    if (next) next.classList.add("next");
+  }
+
+  function rowsWithSource(source) {
+    return Array.prototype.filter.call(resBody.children, function (tr) { return tr.querySelector('[data-k="source"]').value === source; });
+  }
+
+  /* When one of two resources sharing a source gets a split, the other (if the person has not set it) takes the rest. */
+  function completeSplit(tr) {
+    var source = tr.querySelector('[data-k="source"]').value;
+    if (source === "fixed") return;
+    var typed = parseFloat(tr.querySelector('[data-k="split_pct"]').value);
+    var others = rowsWithSource(source).filter(function (r) { return r !== tr; });
+    if (others.length !== 1 || others[0].dataset.touched || !(typed >= 0 && typed <= 100)) return;
+    others[0].querySelector('[data-k="split_pct"]').value = String(parseFloat((100 - typed).toFixed(4)));
+  }
+
+  function addTradeResources() {
+    var added = 0;
+    lastGroups.forEach(function (g) {
+      if (rowsWithSource("group:" + g).length) return;
+      addResource({ name: g, source: "group:" + g, split_pct: 100, _fresh: true });
+      added++;
+    });
+    setStatus(added ? added + " resource" + (added === 1 ? "" : "s") + " added: rename them, and add a second row where a trade is split"
+                    : "Every trade already has a resource");
+    if (added) changed();
   }
 
   function show(kind, message) {
@@ -239,7 +285,11 @@
   /* ---- wiring ------------------------------------------------------------------------------- */
   build(data);
   apply(data.computed);
-  root.addEventListener("input", function (e) { if (e.target.closest("[data-k], [data-field]")) changed(); });
+  root.addEventListener("input", function (e) {
+    var t = e.target;
+    if (t.matches('[data-k="split_pct"]')) { t.closest("tr").dataset.touched = "1"; completeSplit(t.closest("tr")); }
+    if (t.closest("[data-k], [data-field]")) changed();
+  });
   root.addEventListener("change", function (e) {
     var t = e.target;
     if (t.matches('[data-k="source"]')) { t._current = t.value; syncFixed(t.closest("tr")); }
@@ -251,7 +301,8 @@
       addLine({ kind: "allowance", description: "Progress, Plan Review, Meetings, IDC, Client Liaison, etc", flag: "A", qty: 15 });
       changed();
     });
-    $("#add-resource").addEventListener("click", function () { addResource({}).querySelector("input").focus(); changed(); });
+    $("#add-resource").addEventListener("click", function () { addResource({ _fresh: true }).querySelector("input").focus(); changed(); });
+    $("#add-trades").addEventListener("click", addTradeResources);
     $("#add-addition").addEventListener("click", function () { addAddition({}).querySelector("input").focus(); changed(); });
     $("#save").addEventListener("click", save);
     document.addEventListener("keydown", function (e) {
@@ -265,10 +316,20 @@
     });
   }
   $("#download").addEventListener("click", function (e) {
+    if (lastWarnings && !window.confirm(lastWarnings + (lastWarnings === 1 ? " thing is" : " things are") + " still to check (see the list at the top). Download anyway?")) {
+      e.preventDefault();
+      return;
+    }
     if (!dirty || !canEdit) return;                   // the file is made from what is saved, so save first
     e.preventDefault();
     var href = this.href;
     save().then(function (ok) { if (ok) window.location.href = href; });
+  });
+  root.querySelectorAll(".jump a").forEach(function (a) {          // jumping to a folded section opens it
+    a.addEventListener("click", function () {
+      var target = document.querySelector(a.getAttribute("href"));
+      if (target && target.tagName === "DETAILS") target.open = true;
+    });
   });
   window.addEventListener("beforeunload", function (e) { if (dirty) { e.preventDefault(); e.returnValue = ""; } });
 })();

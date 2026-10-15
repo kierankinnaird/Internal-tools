@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import sqlite3
 from contextlib import contextmanager
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Callable, Dict, List, Optional
 
@@ -160,6 +160,8 @@ class Repo:
         if not title:
             raise ValueError("CTR title is required")
         values = {c: _field(c, data.get(c)) for c in SIMPLE_FIELDS}
+        values["prepared_by"] = values["prepared_by"] or user          # whoever starts it, on the day they start it,
+        values["ctr_date"] = values["ctr_date"] or date.today().isoformat()   # unless the form says otherwise
         values.update(title=title, scope_intro=DEFAULT_SCOPE_INTRO, assumptions=DEFAULT_ASSUMPTIONS,
                       exclusions=DEFAULT_EXCLUSIONS, basis=DEFAULT_BASIS,
                       pool1_label=DEFAULT_POOLS[0], pool2_label=DEFAULT_POOLS[1])

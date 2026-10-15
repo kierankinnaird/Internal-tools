@@ -355,6 +355,60 @@ def test_the_stylesheet_has_sharp_edges_and_the_house_colours(c):
     assert "border-radius" not in css and "var(--accent)" in css and "var(--ink)" in css
 
 
+# ---- the friendlier editor ---------------------------------------------------------------------------------------
+def test_the_editor_leads_with_the_steps_and_the_checks_and_has_a_jump_menu(c):
+    page = c.get("/ctrs/1").data.decode()
+    for step in ("hours", "resources", "rates", "download"):
+        assert f'data-step="{step}"' in page
+    assert page.index('id="steps"') < page.index('id="checks"') < page.index('class="jump"') < page.index('id="scope"')
+    assert page.index('id="warnings"') < page.index('id="lines"')                     # the checks are above the tables
+    for target in ("sec-header", "hours-source", "scope", "sec-notes", "resources-h", "additions-h", "sec-terms"):
+        assert f'href="#{target}"' in page and f'id="{target}"' in page, target
+    assert 'id="checks-badge"' in page
+
+
+def test_the_long_text_sections_are_folded_and_the_header_opens_while_it_is_unfinished(c):
+    import re
+    page = c.get("/ctrs/1").data.decode()
+    assert re.search(r'<details class="sec" id="sec-header" open>', page)              # no objectives yet: left open
+    assert re.search(r'<details class="sec" id="sec-notes">', page) and re.search(r'<details class="sec" id="sec-terms">', page)
+    save(c, {"title": "x", "objectives": "Done"})
+    assert re.search(r'<details class="sec" id="sec-header" >', c.get("/ctrs/1").data.decode())   # filled in: folded away
+
+
+def test_the_wording_is_plain_and_there_is_a_button_for_a_resource_per_trade(c):
+    page = c.get("/ctrs/1").data.decode()
+    assert "Hours come from" in page and "Trade / group" in page and "Add a resource for each trade" in page
+    assert "Takes hours from" not in page and ">Group<" not in page
+
+
+def test_a_viewer_does_not_get_the_buttons_that_add_rows(app, c):
+    app.config["CTX"]._permissions = {"ctrs.view"}
+    page = c.get("/ctrs/1").data.decode()
+    assert "add-trades" not in page and "add-resource" not in page
+
+
+def test_the_preview_says_how_far_along_the_ctr_is_and_the_split_totals(c):
+    body = c.post("/ctrs/1/preview", json={"lines": [{"description": "x", "grp": "G", "eng_override": "10"}],
+                                          "resources": [{"name": "A", "source": "group:G", "split_pct": "60", "rate": "1"},
+                                                        {"name": "B", "source": "group:G", "split_pct": "40"}]}).get_json()["computed"]
+    assert body["steps"] == {"hours": True, "resources": True, "rates": False} and body["split_totals"] == {"group:G": 100}
+
+
+def test_a_new_ctr_comes_with_who_made_it_and_the_date(app):
+    from datetime import date
+    c = app.test_client()
+    c.post("/ctrs/", data={"title": "Fresh"})
+    page = c.get("/ctrs/1").data.decode()
+    assert 'data-field="prepared_by" ' in page and 'value="tester"' in page and f'value="{date.today().isoformat()}"' in page
+
+
+def test_the_script_asks_before_downloading_with_open_checks_and_helps_with_splits(c):
+    js = c.get("/ctrs/static/ctrs.js").data.decode()
+    for hook in ("Download anyway?", "completeSplit", "addTradeResources", "split_totals", "c.steps", "checks-badge", ".jump a"):
+        assert hook in js, hook
+
+
 def test_the_script_does_no_sums_of_its_own_and_uses_no_unsafe_html(c):
     js = c.get("/ctrs/static/ctrs.js").data.decode()
     assert "innerHTML" not in js and "eval(" not in js and "document.write" not in js

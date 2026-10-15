@@ -77,3 +77,28 @@
 .ctr .totals { font-variant-numeric: tabular-nums; }
 .ctr .totals b { font-size: 18px; }
 .ctr .more { margin: 28px 0 8px; display: flex; gap: 10px; flex-wrap: wrap; }
+
+/* Progress steps, checks at the top, jump menu, folded sections */
+.ctr .steps { list-style: none; margin: 18px 0; padding: 0; display: flex; flex-wrap: wrap; border: 2px solid var(--ink); }
+.ctr .steps li { flex: 1 1 180px; padding: 10px 14px; border-right: 1px solid var(--line); font-weight: 700; display: flex; flex-direction: column; }
+.ctr .steps li:last-child { border-right: 0; }
+.ctr .steps li b { display: inline-block; width: 22px; height: 22px; line-height: 18px; text-align: center; border: 2px solid var(--ink); margin-right: 8px; font-size: 12px; }
+.ctr .steps li span { font-weight: 400; font-size: 12.5px; color: var(--muted); margin: 2px 0 0 30px; }
+.ctr .steps li.done b { background: var(--ink); color: var(--ink); position: relative; }
+.ctr .steps li.done b::after { content: "\2713"; color: #fff; position: absolute; left: 0; right: 0; top: 0; font-size: 13px; }
+.ctr .steps li.next { background: #fff4ec; box-shadow: inset 0 -4px 0 var(--accent); }
+.ctr .checks { margin: 0 0 14px; }
+.ctr .checks-head { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; margin-bottom: 6px; }
+.ctr .checks .note { margin: 0; }
+.ctr .jump { display: flex; flex-wrap: wrap; gap: 6px 18px; margin: 0 0 6px; font-size: 14px; }
+.ctr .jump a { color: var(--ink); text-decoration-color: var(--accent); text-decoration-thickness: 2px; }
+.ctr details.sec { margin: 28px 0 0; }
+.ctr details.sec > summary { cursor: pointer; list-style: none; }
+.ctr details.sec > summary::-webkit-details-marker { display: none; }
+.ctr details.sec > summary h2 { margin: 0 0 10px; display: flex; align-items: center; gap: 8px; }
+.ctr details.sec > summary h2::before { content: "\25B8"; font-size: 14px; }
+.ctr details.sec[open] > summary h2::before { content: "\25BE"; }
+.ctr .badge { background: var(--accent); color: var(--ink); font-weight: 700; padding: 3px 10px; border: 2px solid var(--ink); text-decoration: none; font-size: 13px; }
+.ctr .splitnote { display: block; font-size: 12px; font-weight: 700; text-align: right; margin-top: 2px; }
+.ctr .splitnote.ok { color: var(--ink); }
+.ctr .splitnote.off { color: var(--accent-text); }

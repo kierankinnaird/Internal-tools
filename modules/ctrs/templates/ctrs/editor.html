@@ -8,10 +8,27 @@
 <h1>{{ ctr.title }}</h1>
 <p class="lede">Last changed {{ ctr.updated_at[:16].replace('T', ' ') }} UTC by {{ ctr.updated_by }}.</p>
 {% if error %}<div class="error" role="alert">{{ error }}</div>{% endif %}
-{% if imported %}<div class="notice" role="status">{{ imported }} trade line{{ '' if imported == '1' else 's' }} brought in from the jobcards. Now say who takes those hours, in the Resources table below.</div>{% endif %}
+{% if imported %}<div class="notice" role="status">{{ imported }} trade line{{ '' if imported == '1' else 's' }} brought in from the jobcards. Now say who does that work, in the Resources table below.</div>{% endif %}
 <div class="error" id="msg" role="alert" hidden></div>
 
-<h2>Header</h2>
+<ol class="steps" id="steps" aria-label="Progress">
+  <li data-step="hours"><b>1</b> Hours in<span>from the jobcards, or typed as lines</span></li>
+  <li data-step="resources"><b>2</b> Shared out<span>every hour goes to a resource, once</span></li>
+  <li data-step="rates"><b>3</b> Rates<span>typed against each resource</span></li>
+  <li data-step="download"><b>4</b> Download<span>the Excel sheet</span></li>
+</ol>
+<div class="checks" id="checks" aria-live="polite">
+  <div class="checks-head">To check</div>
+  <ul class="warnings" id="warnings"></ul>
+  <p class="note" id="no-warnings" hidden>Nothing to check.</p>
+</div>
+<nav class="jump" aria-label="Jump to">
+  <a href="#sec-header">Header</a>{% if snapshots is not none %}<a href="#hours-source">Jobcard hours</a>{% endif %}<a href="#scope">Scope</a>
+  <a href="#sec-notes">Notes</a><a href="#resources-h">Resources</a><a href="#additions-h">Additions</a><a href="#sec-terms">Payment</a>
+</nav>
+
+<details class="sec" id="sec-header" {% if not ctr.objectives %}open{% endif %}>
+<summary><h2>Header and objectives</h2></summary>
 <div class="grid">
   {% for key, label in header_fields %}
   <div><label for="f-{{ key }}">{{ label }}</label>
@@ -22,6 +39,7 @@
   <div><label for="f-objectives">Objectives</label><textarea id="f-objectives" data-field="objectives" rows="5" {% if not can_edit %}readonly{% endif %}>{{ ctr.objectives }}</textarea></div>
   <div><label for="f-inputs">Input requirements</label><textarea id="f-inputs" data-field="inputs" rows="5" {% if not can_edit %}readonly{% endif %}>{{ ctr.inputs }}</textarea></div>
 </div>
+</details>
 
 {% if snapshots is not none %}
 <h2 id="hours-source">Hours from the jobcards</h2>
@@ -36,7 +54,7 @@
   <div class="shrink"><button class="btn dark" type="submit">Import hours</button></div>
 </form>
 {% endif %}
-<p class="note">A snapshot is the hours by trade frozen on the day it was taken. Importing adds one scope line per trade (the trade is the line's group), and replaces the lines of an earlier import. Lines you typed yourself stay.</p>
+<p class="note">A snapshot is the hours by trade frozen on the day it was taken. Importing adds one scope line per trade, and replaces the lines of an earlier import. Lines you typed yourself stay.</p>
 {% else %}<div class="empty">No snapshots yet. Take one from a workpack's page in Jobcards, then come back here.</div>{% endif %}
 {% endif %}
 
@@ -47,7 +65,7 @@
   <div><label for="f-pool2_label">Second hours column</label><input id="f-pool2_label" data-field="pool2_label" value="{{ ctr.pool2_label }}" {% if not can_edit %}readonly{% endif %}></div>
 </div>
 <table class="rows lines" id="lines">
-  <thead><tr><th>Activity / deliverable</th><th>A/D</th><th>WBS</th><th>Group</th><th class="num">Qty</th>
+  <thead><tr><th>Activity / deliverable</th><th>A/D</th><th>WBS</th><th>Trade / group</th><th class="num">Qty</th>
     <th class="num"><span data-pool="1">{{ ctr.pool1_label }}</span> norm</th><th class="num"><span data-pool="2">{{ ctr.pool2_label }}</span> norm</th>
     <th class="num">Factor</th><th class="num"><span data-pool="1">{{ ctr.pool1_label }}</span> h</th><th class="num"><span data-pool="2">{{ ctr.pool2_label }}</span> h</th><th></th></tr></thead>
   <tbody></tbody>
@@ -55,8 +73,10 @@
 <datalist id="groups"></datalist>
 {% if can_edit %}<p class="actions"><button type="button" class="btn" id="add-line">Add line</button>
   <button type="button" class="btn" id="add-allowance">Add allowance (% of all other hours)</button></p>{% endif %}
-<p class="note">Hours are quantity × norm × factor, rounded up to a whole hour. To use hours you already know, type them in the hours column instead. A <b>group</b> names lines (a trade, say) so a resource can take its hours from just those lines. An <b>allowance</b> adds a percentage of every other line's hours to the first column.</p>
+<p class="note">Hours are quantity × norm × factor, rounded up to a whole hour. To use hours you already know, type them in the hours column instead. Give lines the same <b>trade / group</b> name so a resource can take the hours of just those lines. An <b>allowance</b> adds a percentage of every other line's hours to the first column.</p>
 
+<details class="sec" id="sec-notes">
+<summary><h2>Notes and programme</h2></summary>
 <div class="row">
   <div><label for="f-scope_notes">Scope notes</label><textarea id="f-scope_notes" data-field="scope_notes" rows="6" {% if not can_edit %}readonly{% endif %}>{{ ctr.scope_notes }}</textarea></div>
 </div>
@@ -69,17 +89,20 @@
   <div><label for="f-{{ key }}">{{ label }}</label><input id="f-{{ key }}" data-field="{{ key }}" value="{{ ctr[key] }}" {% if not can_edit %}readonly{% endif %}></div>
   {% endfor %}
 </div>
+</details>
 
 <h2 id="resources-h">Resources</h2>
-<p class="note">Each resource takes a percentage of the hours of one source: a whole hours column, a group of lines (a trade), or hours you type in. Hours are shared out in whole numbers that add back up to the source's hours. Rates are typed in.</p>
+<p class="note">Each resource does a percentage of the hours from one place: all of a hours column, one trade or group of lines, or hours you type in. Hours are shared out in whole numbers that add back up to the total. Rates are typed in.</p>
 <table class="rows resources" id="resources">
-  <thead><tr><th>Resource</th><th>Takes hours from</th><th class="num">Split %</th><th class="num">Typed hours</th><th class="num">Cost £ / hour</th><th class="num">Hours</th><th class="num">Total</th><th></th></tr></thead>
+  <thead><tr><th>Resource</th><th>Hours come from</th><th class="num">Split %</th><th class="num">Typed hours</th><th class="num">Cost £ / hour</th><th class="num">Hours</th><th class="num">Total</th><th></th></tr></thead>
   <tbody></tbody>
   <tfoot><tr class="total"><td colspan="5">Total</td><td class="num" id="t-res-hours">0</td><td class="num" id="t-res-cost">£0.00</td><td></td></tr></tfoot>
 </table>
-{% if can_edit %}<p class="actions"><button type="button" class="btn" id="add-resource">Add resource</button></p>{% endif %}
+<datalist id="resource-names"></datalist>
+{% if can_edit %}<p class="actions"><button type="button" class="btn" id="add-resource">Add resource</button>
+  <button type="button" class="btn" id="add-trades" title="Adds a resource at 100% for each trade or group that has none yet">Add a resource for each trade</button></p>{% endif %}
 
-<h2>Additions</h2>
+<h2 id="additions-h">Additions</h2>
 <table class="rows additions" id="additions">
   <thead><tr><th>Addition</th><th class="num">Cost £ / unit</th><th class="num">Units</th><th class="num">Total</th><th></th></tr></thead>
   <tbody></tbody>
@@ -87,19 +110,18 @@
 </table>
 {% if can_edit %}<p class="actions"><button type="button" class="btn" id="add-addition">Add addition</button></p>{% endif %}
 
-<h2>Payment terms and basis</h2>
+<details class="sec" id="sec-terms">
+<summary><h2>Payment terms and basis</h2></summary>
 <div class="row">
   <div class="shrink"><label for="f-payment_terms">Payment terms</label>
     <select id="f-payment_terms" data-field="payment_terms" {% if not can_edit %}disabled{% endif %}>{% for t in terms %}<option {% if t == ctr.payment_terms %}selected{% endif %}>{{ t }}</option>{% endfor %}</select></div>
   <div><label for="f-basis">Basis of proposal</label><textarea id="f-basis" data-field="basis" rows="3" {% if not can_edit %}readonly{% endif %}>{{ ctr.basis }}</textarea></div>
 </div>
-
-<h2>Checks</h2>
-<ul class="warnings" id="warnings"></ul>
-<p class="note" id="no-warnings" hidden>Nothing to check.</p>
+</details>
 
 <div class="savebar">
   <span class="totals">Hours <b id="s-hours">0</b> &nbsp; Cost <b id="s-cost">£0.00</b></span>
+  <a class="badge" id="checks-badge" href="#checks" hidden></a>
   <span class="spacer"></span>
   <span class="note" id="status"></span>
   <a class="btn" href="{{ url_for('ctrs.export_xlsx', ctr_id=ctr.id) }}" id="download">Download Excel</a>

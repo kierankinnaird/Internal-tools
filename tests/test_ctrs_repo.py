@@ -55,6 +55,22 @@ def test_a_new_ctr_starts_with_the_standard_text_and_additions(repo, ctr_id):
     assert c["created_by"] == c["updated_by"] == "kieran" and c["source_snapshot_id"] is None
 
 
+def test_a_new_ctr_is_prepared_by_whoever_starts_it_on_the_day_they_start_it(repo):
+    from datetime import date
+    c = repo.get_ctr(repo.create_ctr({"title": "T"}, "kieran"))
+    assert c["prepared_by"] == "kieran" and c["ctr_date"] == date.today().isoformat()
+    c = repo.get_ctr(repo.create_ctr({"title": "T", "prepared_by": "M.Watt", "ctr_date": "2026-09-17"}, "kieran"))
+    assert c["prepared_by"] == "M.Watt" and c["ctr_date"] == "2026-09-17"       # what was typed wins
+    c = repo.get_ctr(repo.create_ctr({"title": "T", "prepared_by": "   "}, "kieran"))
+    assert c["prepared_by"] == "kieran"
+
+
+def test_a_duplicate_keeps_the_original_preparer_and_date(repo):
+    first = repo.create_ctr({"title": "T", "prepared_by": "M.Watt", "ctr_date": "2026-09-17"}, "kieran")
+    copy = repo.get_ctr(repo.duplicate_ctr(first, "ross"))
+    assert copy["prepared_by"] == "M.Watt" and copy["ctr_date"] == "2026-09-17"
+
+
 def test_creating_ignores_fields_a_form_should_not_set(repo):
     cid = repo.create_ctr({"title": "T", "id": 99, "created_by": "someone else", "basis": "mine", "source_text": "x"}, "kieran")
     c = repo.get_ctr(cid)

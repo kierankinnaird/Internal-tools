@@ -12,7 +12,7 @@ How hours flow, so the page, the Excel file and the tests all agree:
 from __future__ import annotations
 
 import math
-from typing import Dict, Iterable, List, Optional
+from typing import Dict, Iterable, List, Optional, Tuple
 
 TOLERANCE = 0.01            # how far from 100% a set of splits may be before it is flagged
 POOL1, POOL2, FIXED = "pool1", "pool2", "fixed"
@@ -156,6 +156,7 @@ def compute(ctr: Dict) -> Dict:
     out_add = [{"name": a.get("name", ""), "unit_cost": a.get("unit_cost"), "units": a.get("units"),
                 "cost": round((a.get("unit_cost") or 0) * (a.get("units") or 0), 2)} for a in additions]
 
+    found = checks(lines, results, out_res, by_source, groups, labels)
     resources_cost = round(sum(r["cost"] for r in out_res), 2)
     additions_cost = round(sum(a["cost"] for a in out_add), 2)
     options = [{"value": POOL1, "label": f"All {labels[0]} hours", "hours": pools[POOL1]},
@@ -168,7 +169,10 @@ def compute(ctr: Dict) -> Dict:
         "totals": {"hours": sum(r["hours"] for r in out_res), "line_hours": pools[POOL1] + pools[POOL2],
                    "resources_cost": resources_cost, "additions_cost": additions_cost,
                    "cost": round(resources_cost + additions_cost, 2)},
-        "warnings": warnings(lines, results, out_res, by_source, groups, labels),
+        "warnings": [text for _, text in found],
+        "split_totals": {source: round(sum(100.0 if out_res[i]["split_pct"] is None else out_res[i]["split_pct"] for i in members), 6)
+                         for source, members in by_source.items()},
+        "steps": steps(lines, results, out_res, found),
     }
 
 
@@ -177,16 +181,17 @@ def _names(items: List[str], limit: int = 4) -> str:
     return ", ".join(items[:limit]) + (f" and {len(items) - limit} more" if len(items) > limit else "")
 
 
-def warnings(lines, results, resources, by_source, groups, labels) -> List[str]:
-    out: List[str] = []
+def checks(lines, results, resources, by_source, groups, labels) -> List[Tuple[str, str]]:
+    """Things to look at, as (kind, text). Kinds: split, group, missed, twice, rate."""
+    out: List[Tuple[str, str]] = []
     used = set(by_source)
     for source, members in by_source.items():
         total = sum(100.0 if resources[i]["split_pct"] is None else resources[i]["split_pct"] for i in members)
         if abs(total - 100.0) > TOLERANCE:
-            out.append(f"Splits taking the {source_label(source, labels)} add up to {total:g}%, not 100%.")
+            out.append(("split", f"Splits taking the {source_label(source, labels)} add up to {total:g}%, not 100%."))
         if source.startswith(GROUP) and source[len(GROUP):] not in groups:
-            out.append(f"{_names([resources[i]['name'] for i in members])} take hours from “{source[len(GROUP):]}”, "
-                       "which no scope line uses.")
+            out.append(("group", f"{_names([resources[i]['name'] for i in members])} take hours from “{source[len(GROUP):]}”, "
+                                 "which no scope line uses."))
     # hours nobody takes, and hours taken twice
     missed = {POOL1: [], POOL2: []}
     twice = []
@@ -201,10 +206,20 @@ def warnings(lines, results, resources, by_source, groups, labels) -> List[str]:
                 twice.append(name)
     for pool, names in missed.items():
         if names:
-            out.append(f"No resource takes the {labels[0 if pool == POOL1 else 1]} hours of: {_names(names)}.")
+            out.append(("missed", f"No resource takes the {labels[0 if pool == POOL1 else 1]} hours of: {_names(names)}."))
     if twice:
-        out.append(f"These hours are shared out twice, once as a whole column and once as a group: {_names(twice)}.")
+        out.append(("twice", f"These hours are shared out twice, once as a whole column and once as a group: {_names(twice)}."))
     unrated = [r["name"] for r in resources if r["hours"] and r["rate"] is None]
     if unrated:
-        out.append(f"No rate yet for: {_names(unrated)}.")
+        out.append(("rate", f"No rate yet for: {_names(unrated)}."))
     return out
+
+
+def steps(lines, results, resources, found) -> Dict[str, bool]:
+    """How far along a CTR is, for the page's checklist: hours in, shared out with nothing left over, rates typed in."""
+    kinds = {k for k, _ in found}
+    has_hours = any(r["eng"] or r["des"] for r in results)
+    given = any(r["hours"] for r in resources)
+    return {"hours": has_hours,
+            "resources": has_hours and given and not kinds & {"split", "group", "missed", "twice"},
+            "rates": given and "rate" not in kinds}
