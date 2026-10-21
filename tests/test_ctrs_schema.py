@@ -19,9 +19,45 @@ def tables(db_path):
 
 def test_the_schema_is_created_once(tmp_path):
     db = tmp_path / "ctrs.sqlite"
-    assert migrate(db, "ctrs", CTRS) == 1
-    assert {"ctr", "ctr_line", "ctr_resource", "ctr_addition"} <= tables(db)
+    assert migrate(db, "ctrs", CTRS) == 3
+    assert {"ctr", "ctr_line", "ctr_resource", "ctr_addition", "estimate"} <= tables(db)
     assert migrate(db, "ctrs", CTRS) == 0
+
+
+def test_ctrs_made_before_workbooks_existed_are_gathered_into_workbooks(tmp_path):
+    """Run 0001 alone, add CTRs the old way, then 0002: CTRs sharing their project details land in one workbook."""
+    folder = tmp_path / "migrations"
+    folder.mkdir()
+    (folder / "0001_initial.sql").write_text((CTRS / "0001_initial.sql").read_text(encoding="utf-8"), encoding="utf-8")
+    db = tmp_path / "ctrs.sqlite"
+    assert migrate(db, "ctrs", folder) == 1
+    with sqlite3.connect(db) as c:
+        for title, client, project in [("Piping", "Apache", "BB diesel"), ("Mechanical", "Apache", "BB diesel"),
+                                       ("Process", "Shell", "Pipeline"), ("Loose", "", "")]:
+            c.execute("INSERT INTO ctr (title, client, project_title, created_at, updated_at) VALUES (?,?,?,'t','t')",
+                      (title, client, project))
+        c.execute("INSERT INTO ctr_line (ctr_id, pos, description) VALUES (1, 1, 'kept')")
+    (folder / "0002_estimates.sql").write_text((CTRS / "0002_estimates.sql").read_text(encoding="utf-8"), encoding="utf-8")
+    assert migrate(db, "ctrs", folder) == 1
+    with sqlite3.connect(db) as c:
+        groups = c.execute("SELECT e.title, e.client, group_concat(ctr.title) FROM estimate e JOIN ctr ON ctr.estimate_id = e.id "
+                           "GROUP BY e.id ORDER BY e.id").fetchall()
+        assert c.execute("SELECT COUNT(*) FROM ctr WHERE estimate_id IS NULL").fetchone()[0] == 0
+        assert c.execute("SELECT description FROM ctr_line").fetchone() == ("kept",)
+    names = {title: (client, sorted(members.split(","))) for title, client, members in groups}
+    assert names == {"BB diesel": ("Apache", ["Mechanical", "Piping"]), "Pipeline": ("Shell", ["Process"]), "Estimate": ("", ["Loose"])}
+
+
+def test_deleting_a_workbook_removes_its_ctrs_and_their_rows(tmp_path):
+    db = tmp_path / "ctrs.sqlite"
+    migrate(db, "ctrs", CTRS)
+    with sqlite3.connect(db) as c:
+        c.execute("PRAGMA foreign_keys = ON")
+        c.execute("INSERT INTO estimate (title, created_at, updated_at) VALUES ('E', 'now', 'now')")
+        c.execute("INSERT INTO ctr (title, estimate_id, created_at, updated_at) VALUES ('T', 1, 'now', 'now')")
+        c.execute("INSERT INTO ctr_line (ctr_id, pos) VALUES (1, 1)")
+        c.execute("DELETE FROM estimate WHERE id = 1")
+        assert [c.execute(f"SELECT COUNT(*) FROM {t}").fetchone()[0] for t in ("ctr", "ctr_line")] == [0, 0]
 
 
 def test_deleting_a_ctr_removes_its_rows(tmp_path):
@@ -71,7 +107,8 @@ def test_it_loads_with_any_mix_of_the_other_modules(tmp_path):
 def test_the_jobcards_service_is_looked_up_when_a_page_is_asked_for_so_load_order_does_not_matter(tmp_path):
     app = create_app(tmp_path, "tester", modules=["ctrs", "jobcards"])           # the "wrong" way round
     c = app.test_client()
-    c.post("/ctrs/", data={"title": "T"})
+    c.post("/ctrs/", data={"title": "W"})
+    c.post("/ctrs/estimates/1/ctrs", data={"title": "T"})
     assert b"Hours from the jobcards" in c.get("/ctrs/1").data
 
 

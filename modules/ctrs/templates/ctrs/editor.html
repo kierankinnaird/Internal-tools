@@ -4,7 +4,7 @@
 {% block content %}
 <div class="ctr" id="ctr" data-save-url="{{ url_for('ctrs.save', ctr_id=ctr.id) }}" data-preview-url="{{ url_for('ctrs.preview', ctr_id=ctr.id) }}"
      data-can-edit="{{ 1 if can_edit else 0 }}">
-<div class="crumbs"><a href="{{ url_for('ctrs.index') }}">CTRs</a> / {{ ctr.title }}</div>
+<div class="crumbs"><a href="{{ url_for('ctrs.index') }}">CTRs</a> / <a href="{{ url_for('ctrs.estimate', estimate_id=estimate.id) }}">{{ estimate.title }}</a> / {{ ctr.title }}</div>
 <h1>{{ ctr.title }}</h1>
 <p class="lede">Last changed {{ ctr.updated_at[:16].replace('T', ' ') }} UTC by {{ ctr.updated_by }}.</p>
 {% if error %}<div class="error" role="alert">{{ error }}</div>{% endif %}
@@ -31,10 +31,16 @@
 <summary><h2>Header and objectives</h2></summary>
 <div class="grid">
   {% for key, label in header_fields %}
+  {% if key in shared %}
+  <div><label for="f-{{ key }}">{{ label }}</label>
+    <input id="f-{{ key }}" value="{{ ctr[key] }}" readonly title="Set once for the whole workbook"></div>
+  {% else %}
   <div><label for="f-{{ key }}">{{ label }}</label>
     <input id="f-{{ key }}" data-field="{{ key }}" {% if key == 'ctr_date' %}type="date"{% endif %} value="{{ ctr[key] }}" {% if not can_edit %}readonly{% endif %}></div>
+  {% endif %}
   {% endfor %}
 </div>
+<p class="note">Client, project and framework details are shared by every sheet in the workbook; change them on <a href="{{ url_for('ctrs.estimate', estimate_id=estimate.id) }}">the workbook's page</a>.</p>
 <div class="row">
   <div><label for="f-objectives">Objectives</label><textarea id="f-objectives" data-field="objectives" rows="5" {% if not can_edit %}readonly{% endif %}>{{ ctr.objectives }}</textarea></div>
   <div><label for="f-inputs">Input requirements</label><textarea id="f-inputs" data-field="inputs" rows="5" {% if not can_edit %}readonly{% endif %}>{{ ctr.inputs }}</textarea></div>
@@ -124,7 +130,8 @@
   <a class="badge" id="checks-badge" href="#checks" hidden></a>
   <span class="spacer"></span>
   <span class="note" id="status"></span>
-  <a class="btn" href="{{ url_for('ctrs.export_xlsx', ctr_id=ctr.id) }}" id="download">Download Excel</a>
+  <a class="btn" href="{{ url_for('ctrs.export_xlsx', ctr_id=ctr.id) }}" id="download" title="Just this sheet, as its own file">Download Excel</a>
+  <a class="btn" href="{{ url_for('ctrs.export_workbook', estimate_id=estimate.id) }}" title="The summary and every CTR sheet in this workbook">Download workbook</a>
   {% if can_edit %}<button type="button" class="btn primary" id="save">Save</button>{% endif %}
 </div>
 

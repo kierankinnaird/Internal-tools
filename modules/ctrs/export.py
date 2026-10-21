@@ -1,5 +1,9 @@
-"""A CTR as an Excel workbook laid out like the company's CTR sheets (header block, scope of work, resources with their
-hours and cost, additions, payment terms, basis of proposal), so it can be edited by hand afterwards.
+"""CTRs as Excel, laid out like the company's CTR sheets (header block, scope of work, resources with their hours and
+cost, additions, payment terms, basis of proposal), so they can be edited by hand afterwards.
+
+`write_workbook` makes the whole estimate: a Summary sheet, then one sheet per CTR. The Summary's hours and cost are
+formulas that point at each CTR sheet's own totals (written here, so no link can be left pointing nowhere).
+`write_ctr` makes a file of just one CTR sheet.
 
 The printed part is columns A to J. Beside the tables, outside the print area, sit the working figures the original sheets
 keep there: the factor of each scope line, the two norms (columns K, L, M), and for each resource the percentage split and
@@ -7,7 +11,7 @@ where its hours come from. Line hours, resource costs and every total are formul
 this tool shared out in whole hours (calc.share_out), written as a value, so change a split here and in the tool, not by
 editing the sheet.
 
-ONE sheet, A4 portrait, full width, with a page break after the scope table, as the original sheets have.
+Each CTR sheet is A4 portrait, full width, with a page break after the scope table, as the original sheets have.
 """
 from __future__ import annotations
 
@@ -22,6 +26,7 @@ import openpyxl
 from openpyxl.cell.cell import ILLEGAL_CHARACTERS_RE
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
+from openpyxl.worksheet.hyperlink import Hyperlink
 from openpyxl.worksheet.pagebreak import Break
 from openpyxl.worksheet.properties import PageSetupProperties
 
@@ -199,7 +204,7 @@ def _scope(ws, ctr: Dict, calced: Dict, top: int, results: Dict[str, float]) -> 
     return last
 
 
-def _after_scope(ws, ctr: Dict, calced: Dict, top: int, results: Dict[str, float]) -> int:
+def _after_scope(ws, ctr: Dict, calced: Dict, top: int, results: Dict[str, float], marks: Optional[Dict[str, str]] = None) -> int:
     """Notes, dates, resources, additions, payment terms and basis. Returns the last row used."""
     r = top
     for key in ("scope_notes", "assumptions", "exclusions"):
@@ -271,6 +276,8 @@ def _after_scope(ws, ctr: Dict, calced: Dict, top: int, results: Dict[str, float
     put(ws, grand, 9, LAST, f"=SUM(I{first_add}:I{last_add})+I{total_row}", fill=_GREEN, bold=True, align="center",
         fmt=_GBP, formula=True)
     results[f"I{grand}"] = calced["totals"]["cost"]
+    if marks is not None:                                # where the Summary sheet finds this CTR's totals
+        marks["hours"], marks["cost"] = f"E{total_row}", f"I{grand}"
 
     r = grand + 1
     ws.row_dimensions[r].height = 15
@@ -329,42 +336,125 @@ _SHEET_RELS = ('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
                f'<Relationship Id="rId1" Type="{_REL}/drawing" Target="../drawings/drawing1.xml"/></Relationships>')
 
 
-def _finish(path: Path, results: Dict[str, float], logo: Optional[bytes]) -> None:
+def _drawing_parts(n: int) -> Tuple[str, str]:
+    """The XML files that put the logo on sheet n (they all share one picture)."""
+    return f"xl/drawings/drawing{n}.xml", f"xl/drawings/_rels/drawing{n}.xml.rels"
+
+
+def _finish(path: Path, sheets: List[Tuple[Dict[str, float], bool]], logo: Optional[bytes]) -> None:
     """Put each formula's result in the file beside the formula (openpyxl writes only the formula, and a viewer that does
-    not calculate, such as Excel's Protected View, would show the totals empty), and add the logo picture."""
-    sheet, temp = "xl/worksheets/sheet1.xml", path.with_name(path.name + ".tmp")
+    not calculate, such as Excel's Protected View, would show the totals empty), and add the logo picture to the sheets
+    that want it. `sheets` is, for each sheet in workbook order, (its formula results, whether it takes the logo)."""
+    temp = path.with_name(path.name + ".tmp")
     with zipfile.ZipFile(path) as source, zipfile.ZipFile(temp, "w", zipfile.ZIP_DEFLATED) as target:
-        if "xl/worksheets/_rels/sheet1.xml.rels" in source.namelist():
-            logo = None                                  # the sheet already has parts of its own; skip the picture, not the file
+        names = set(source.namelist())
+        pictured = []                                    # sheet numbers that get the logo
+        for n, (_, wants_logo) in enumerate(sheets, 1):
+            if wants_logo and logo and f"xl/worksheets/_rels/sheet{n}.xml.rels" not in names:
+                pictured.append(n)                       # a sheet that already has parts of its own is left without the picture
         for item in source.infolist():
             data = source.read(item.filename)
-            if item.filename == sheet:
+            m = re.fullmatch(r"xl/worksheets/sheet(\d+)\.xml", item.filename)
+            if m and int(m.group(1)) <= len(sheets):
+                n = int(m.group(1))
                 xml = data.decode("utf-8")
-                for ref, value in results.items():
+                for ref, value in sheets[n - 1][0].items():
                     xml = re.sub(rf'(<c r="{ref}"[^>]*><f>[^<]*</f>)(?:<v></v>|<v\s*/>)',
-                                 lambda m: f"{m.group(1)}<v>{value:.10g}</v>", xml, count=1)
-                if logo:
+                                 lambda found: f"{found.group(1)}<v>{value:.10g}</v>", xml, count=1)
+                if n in pictured:
                     xml = xml.replace("</worksheet>", f'<drawing xmlns:r="{_REL}" r:id="rId1"/></worksheet>')
                 data = xml.encode("utf-8")
-            elif item.filename == "[Content_Types].xml" and logo:
+            elif item.filename == "[Content_Types].xml" and pictured:
                 xml = data.decode("utf-8")
                 if 'Extension="png"' not in xml:
                     xml = xml.replace("<Override", '<Default Extension="png" ContentType="image/png"/><Override', 1)
-                xml = xml.replace("</Types>", '<Override PartName="/xl/drawings/drawing1.xml" ContentType='
-                                  '"application/vnd.openxmlformats-officedocument.drawing+xml"/></Types>')
-                data = xml.encode("utf-8")
+                overrides = "".join(f'<Override PartName="/{_drawing_parts(n)[0]}" ContentType='
+                                    '"application/vnd.openxmlformats-officedocument.drawing+xml"/>' for n in pictured)
+                data = xml.replace("</Types>", overrides + "</Types>").encode("utf-8")
             target.writestr(item, data)
-        if logo:
+        if pictured:
             target.writestr("xl/media/image1.png", logo)
-            target.writestr("xl/drawings/drawing1.xml", _DRAWING)
-            target.writestr("xl/drawings/_rels/drawing1.xml.rels", _DRAWING_RELS)
-            target.writestr("xl/worksheets/_rels/sheet1.xml.rels", _SHEET_RELS)
+            for n in pictured:
+                drawing, rels = _drawing_parts(n)
+                target.writestr(drawing, _DRAWING)
+                target.writestr(rels, _DRAWING_RELS)
+                target.writestr(f"xl/worksheets/_rels/sheet{n}.xml.rels", _SHEET_RELS.replace("drawing1.xml", f"drawing{n}.xml"))
     temp.replace(path)
 
 
 def sheet_name(title: str) -> str:
-    name = re.sub(r"[\[\]:*?/\\]", " ", text(title)).strip()[:31].strip()
+    name = re.sub(r"[\[\]:*?/\\']", " ", text(title)).strip()[:31].strip()
     return name or "CTR"
+
+
+def unique_names(titles: List[str], taken: Tuple[str, ...] = ()) -> List[str]:
+    """One sheet name for each title: a name Excel accepts, different from every other (Excel ignores case) and from `taken`."""
+    used = {t.lower() for t in taken}
+    out = []
+    for title in titles:
+        base = sheet_name(title)
+        name, n = base, 1
+        while name.lower() in used:
+            n += 1
+            tag = f" ({n})"
+            name = base[:31 - len(tag)].rstrip() + tag
+        used.add(name.lower())
+        out.append(name)
+    return out
+
+
+def _draw_ctr(ws, ctr: Dict, calced: Dict, results: Dict[str, float], marks: Optional[Dict[str, str]]) -> None:
+    top = _header(ws, ctr)
+    scope_end = _scope(ws, ctr, calced, top, results)
+    last = _after_scope(ws, ctr, calced, scope_end + 1, results, marks)
+    _box(ws, last)
+    _setup(ws, last, scope_end)
+
+
+SUMMARY_NAME = "Summary"
+SUMMARY_WIDTHS = {"A": 6.0, "B": 44.0, "C": 16.0, "D": 12.0, "E": 18.0}
+
+
+def _draw_summary(ws, estimate: Dict, rows: List[Dict], results: Dict[str, float]) -> None:
+    """The first sheet: the project details, then one line for each CTR sheet with its hours and cost taken from that
+    sheet by formula, and the totals."""
+    for letter, width in SUMMARY_WIDTHS.items():
+        ws.column_dimensions[letter].width = width
+    put(ws, 1, 1, 5, "CTR Summary", black=True, align="center", size=12)
+    put(ws, 2, 1, 5, text(estimate.get("title")), bold=True, size=12)
+    for r, (label, key) in enumerate([("Client", "client"), ("Project Name", "project_name"), ("Project Title", "project_title"),
+                                      ("Framework Ref", "framework_ref")], 3):
+        put(ws, r, 1, 2, label, black=True)
+        put(ws, r, 3, 5, text(estimate.get(key)))
+    ws.row_dimensions[7].height = 8
+    head = 8
+    for col, label, al in ((1, "No", "center"), (2, "CTR", "left"), (3, "CTR No", "left"), (4, "Hours", "right"), (5, "Cost £", "right")):
+        put(ws, head, col, col, label, black=True, align=al)
+    for i, row in enumerate(rows):
+        r = head + 1 + i
+        put(ws, r, 1, 1, i + 1, thin=True, align="center")
+        put(ws, r, 2, 2, text(row["title"]), thin=True)
+        ws.cell(r, 2).hyperlink = Hyperlink(ref=f"B{r}", location=f"'{row['sheet']}'!A1", display=text(row["title"]))
+        put(ws, r, 3, 3, text(row["ctr_no"]), thin=True)
+        put(ws, r, 4, 4, f"='{row['sheet']}'!{row['hours_ref']}", thin=True, align="right", fmt=_HOURS, formula=True)
+        put(ws, r, 5, 5, f"='{row['sheet']}'!{row['cost_ref']}", thin=True, align="right", fmt=_GBP, formula=True)
+        results[f"D{r}"], results[f"E{r}"] = row["hours"], row["cost"]
+    first, last = head + 1, head + max(len(rows), 1)
+    if not rows:                                         # nothing to list yet: one empty line, as the CTR tables do
+        for col in range(1, 6):
+            put(ws, first, col, col, thin=True)
+    total = last + 1
+    put(ws, total, 1, 3, "Total", black=True)
+    put(ws, total, 4, 4, f"=SUM(D{first}:D{last})", fill=_GREEN, bold=True, align="right", fmt=_HOURS, formula=True)
+    put(ws, total, 5, 5, f"=SUM(E{first}:E{last})", fill=_GREEN, bold=True, align="right", fmt=_GBP, formula=True)
+    results[f"D{total}"] = sum(r["hours"] for r in rows)
+    results[f"E{total}"] = round(sum(r["cost"] for r in rows), 2)
+    ws.page_setup.paperSize = ws.PAPERSIZE_A4
+    ws.page_setup.orientation = "portrait"
+    ws.page_setup.fitToWidth = 1
+    ws.page_setup.fitToHeight = 0
+    ws.sheet_properties.pageSetUpPr = PageSetupProperties(fitToPage=True)
+    ws.print_area = f"A1:E{total}"
 
 
 def write_ctr(path: Path, ctr: Dict, calced: Optional[Dict] = None) -> None:
@@ -374,12 +464,33 @@ def write_ctr(path: Path, ctr: Dict, calced: Optional[Dict] = None) -> None:
     ws = wb.active
     ws.title = sheet_name(ctr.get("title"))
     results: Dict[str, float] = {}
-    top = _header(ws, ctr)
-    scope_end = _scope(ws, ctr, calced, top, results)
-    last = _after_scope(ws, ctr, calced, scope_end + 1, results)
-    _box(ws, last)
-    _setup(ws, last, scope_end)
+    _draw_ctr(ws, ctr, calced, results, None)
     wb.properties.title = text(ctr.get("title"))
     wb.properties.creator = "NMC Tools"
     wb.save(path)
-    _finish(path, results, LOGO.read_bytes() if LOGO.exists() else None)
+    _finish(path, [(results, True)], LOGO.read_bytes() if LOGO.exists() else None)
+
+
+def write_workbook(path: Path, estimate: Dict, ctrs: List[Dict]) -> None:
+    """Write a whole estimate to an .xlsx file: the Summary sheet, then a sheet for each of `ctrs` (as Repo.get_ctr gives
+    them), in order."""
+    wb = openpyxl.Workbook()
+    summary = wb.active
+    summary.title = SUMMARY_NAME
+    names = unique_names([c.get("title") for c in ctrs], taken=(SUMMARY_NAME,))
+    sheets: List[Tuple[Dict[str, float], bool]] = [({}, False)]
+    rows = []
+    for ctr, name in zip(ctrs, names):
+        calced = calc.compute(ctr)
+        ws = wb.create_sheet(name)
+        results: Dict[str, float] = {}
+        marks: Dict[str, str] = {}
+        _draw_ctr(ws, ctr, calced, results, marks)
+        sheets.append((results, True))
+        rows.append({"title": ctr.get("title"), "ctr_no": ctr.get("ctr_no"), "sheet": name, "hours_ref": marks["hours"],
+                     "cost_ref": marks["cost"], "hours": calced["totals"]["hours"], "cost": calced["totals"]["cost"]})
+    _draw_summary(summary, estimate, rows, sheets[0][0])
+    wb.properties.title = text(estimate.get("title"))
+    wb.properties.creator = "NMC Tools"
+    wb.save(path)
+    _finish(path, sheets, LOGO.read_bytes() if LOGO.exists() else None)

@@ -239,6 +239,23 @@ def create_blueprint(ctx: Context) -> Blueprint:
         return {"name": column, "label": cert_labels[column], "value": cert[column], "hint": certfields.hint(column),
                 "textarea": column in certfields.TEXTAREAS}
 
+    def form_layout(cert, wp):
+        """The template-shaped tables for this form, each cell bound to the certificate field it edits (or to the
+        project value it shows, or marked as filled by the tool)."""
+        tables = certfields.layout(cert["form"])
+        for table in tables:
+            for row in table["rows"]:
+                for cell in row:
+                    key = cell.get("key")
+                    if key in cert_labels:
+                        cell["field"] = cert_field(cert, key)
+                        cell["placeholder"] = wp[key] if key in certfields.INHERITED else ""
+                    elif key:
+                        source = certfields.WORKPACK_KEYS.get(key)
+                        cell["shown"] = wp[source] if source else None
+                        cell["auto"] = source is None
+        return tables
+
     # ---- the list ----------------------------------------------------------------------------
     def list_page(problems=None, status=200):
         page = render_template("workpacks/index.html", workpacks=repo.list_workpacks(),
@@ -370,7 +387,12 @@ def create_blueprint(ctx: Context) -> Blueprint:
         if kind:
             n = len(repo.get_rows(cert_pk, kind))
             table = {"title": rowtables.TITLES[kind], "count": rowtables.count_text(kind, n)}
+        extra = [cert_field(cert, c) for c in certfields.unplaced(cert["form"])]
+        for f in extra:
+            f["label"] = certfields.LABEL_OVERRIDES.get(f["name"], f["label"])
+        head = {c: cert_field(cert, c) for c in certfields.HEADER_COLUMNS}
         return render_template("workpacks/certificate.html", wp=wp, cert=cert, sections=sections, table=table,
+                               tables=form_layout(cert, wp), extra=extra, head=head,
                                previous=siblings[at - 1] if at > 0 else None,
                                following=siblings[at + 1] if at + 1 < len(siblings) else None,
                                forms=form_codes(store.folder), error=request.args.get("error"),

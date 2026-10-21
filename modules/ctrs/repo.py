@@ -9,8 +9,8 @@ from typing import Callable, Dict, List, Optional
 
 from . import calc
 from .constants import (DEFAULT_ADDITIONS, DEFAULT_ASSUMPTIONS, DEFAULT_BASIS, DEFAULT_EXCLUSIONS, DEFAULT_POOLS,
-                        DEFAULT_SCOPE_INTRO, FIELD_LABELS, FLAGS, LONG_FIELDS, MAX_ADDITIONS, MAX_LINES, MAX_RESOURCES,
-                        MAX_TEXT, PAYMENT_TERMS, SIMPLE_FIELDS)
+                        DEFAULT_SCOPE_INTRO, DISCIPLINES, ESTIMATE_FIELDS, FIELD_LABELS, FLAGS, LONG_FIELDS, MAX_ADDITIONS,
+                        MAX_CTRS, MAX_LINES, MAX_RESOURCES, MAX_TEXT, PAYMENT_TERMS, SHARED_FIELDS, SIMPLE_FIELDS)
 
 _SHORT = 200                       # longest a one-line field may be
 
@@ -142,9 +142,13 @@ class Repo:
                 ctr[key] = [dict(x) for x in db.execute(f"SELECT * FROM {table} WHERE ctr_id=? ORDER BY pos, id", (ctr_id,))]
         return ctr
 
-    def list_ctrs(self) -> List[Dict]:
+    def list_ctrs(self, estimate_id: Optional[int] = None) -> List[Dict]:
+        """Every CTR, newest first; or, given an estimate, the CTRs in it in the order they were made (the sheet order)."""
         with self._db() as db:
-            ids = [r[0] for r in db.execute("SELECT id FROM ctr ORDER BY id DESC")]
+            if estimate_id is None:
+                ids = [r[0] for r in db.execute("SELECT id FROM ctr ORDER BY id DESC")]
+            else:
+                ids = [r[0] for r in db.execute("SELECT id FROM ctr WHERE estimate_id=? ORDER BY id", (estimate_id,))]
         out = []
         for ctr_id in ids:
             ctr = self.get_ctr(ctr_id)
@@ -154,17 +158,100 @@ class Repo:
                 out.append(ctr)
         return out
 
+    # ---- estimates (the workbook) ------------------------------------------------------------
+    def get_estimate(self, estimate_id: int, with_ctrs: bool = True) -> Optional[Dict]:
+        """One estimate with its CTRs (each with its hours and cost) and the totals across them. `with_ctrs=False` is just
+        the estimate's own details, which is quicker when that is all a page needs."""
+        with self._db() as db:
+            r = db.execute("SELECT * FROM estimate WHERE id=?", (estimate_id,)).fetchone()
+        if not r:
+            return None
+        estimate = dict(r)
+        if not with_ctrs:
+            return estimate
+        estimate["ctrs"] = self.list_ctrs(estimate_id)
+        estimate["hours"] = sum(c["hours"] for c in estimate["ctrs"])
+        estimate["cost"] = round(sum(c["cost"] for c in estimate["ctrs"]), 2)
+        return estimate
+
+    def list_estimates(self) -> List[Dict]:
+        with self._db() as db:
+            ids = [r[0] for r in db.execute("SELECT id FROM estimate ORDER BY id DESC")]
+        return [e for e in (self.get_estimate(i) for i in ids) if e]
+
+    def _estimate_values(self, data: Dict, old: Optional[Dict] = None) -> Dict[str, str]:
+        values = {c: _text(data.get(c, old[c] if old else ""), label) for c, label in ESTIMATE_FIELDS}
+        if not values["title"]:
+            raise ValueError("Estimate name is required")
+        values["jobcards_workpack"] = _text(data.get("jobcards_workpack", old["jobcards_workpack"] if old else ""),
+                                            "Jobcards workpack", 60)
+        return values
+
+    def _insert_estimate(self, values: Dict[str, str], user: str) -> int:
+        stamp = now()
+        columns = list(values) + ["created_by", "created_at", "updated_by", "updated_at"]
+        with self._db() as db:
+            cur = db.execute(f"INSERT INTO estimate ({','.join(columns)}) VALUES ({','.join('?' * len(columns))})",
+                             [*values.values(), user, stamp, user, stamp])
+        return cur.lastrowid
+
+    def create_estimate(self, data: Dict, user: str, disciplines=()) -> int:
+        """A new workbook, with a CTR already in it for each of the named disciplines (from constants.DISCIPLINES)."""
+        values = self._estimate_values(data)
+        chosen = [d for d in DISCIPLINES if d in set(disciplines)]
+        unknown = [d for d in disciplines if d not in DISCIPLINES]
+        if unknown:
+            raise ValueError(f"Unknown discipline: {', '.join(map(str, unknown))}")
+        estimate_id = self._insert_estimate(values, user)
+        self._audit("estimate_created", values["title"])
+        for name in chosen:
+            self.create_ctr({"title": name}, user, estimate_id=estimate_id)
+        return estimate_id
+
+    def save_estimate(self, estimate_id: int, data: Dict, user: str) -> Dict:
+        """Save the workbook's own details. The project details are copied onto every CTR in it, so the sheets agree."""
+        old = self.get_estimate(estimate_id, with_ctrs=False)
+        if not old:
+            raise ValueError("No such estimate")
+        values = self._estimate_values(data, old)
+        with self._db() as db:
+            db.execute(f"UPDATE estimate SET {','.join(c + '=?' for c in values)}, updated_by=?, updated_at=? WHERE id=?",
+                       [*values.values(), user, now(), estimate_id])
+            db.execute(f"UPDATE ctr SET {','.join(c + '=?' for c in SHARED_FIELDS)} WHERE estimate_id=?",
+                       [*(values[c] for c in SHARED_FIELDS), estimate_id])
+        self._audit("estimate_saved", values["title"])
+        return self.get_estimate(estimate_id)
+
+    def delete_estimate(self, estimate_id: int) -> None:
+        old = self.get_estimate(estimate_id, with_ctrs=False)
+        with self._db() as db:
+            db.execute("DELETE FROM estimate WHERE id=?", (estimate_id,))            # its CTRs go with it
+        self._audit("estimate_deleted", old["title"] if old else str(estimate_id))
+
     # ---- writing ---------------------------------------------------------------------------
-    def create_ctr(self, data: Dict, user: str) -> int:
+    def create_ctr(self, data: Dict, user: str, estimate_id: Optional[int] = None) -> int:
+        """A new CTR in the given estimate (it takes the estimate's project details). With none given, it gets an estimate of
+        its own, named after it."""
         title = _text(data.get("title"), "CTR title")
         if not title:
             raise ValueError("CTR title is required")
         values = {c: _field(c, data.get(c)) for c in SIMPLE_FIELDS}
+        if estimate_id is None:
+            estimate_id = self._insert_estimate(self._estimate_values({"title": title, **{c: values[c] for c in SHARED_FIELDS}}), user)
+        else:
+            with self._db() as db:
+                estimate = db.execute("SELECT * FROM estimate WHERE id=?", (estimate_id,)).fetchone()
+                count = db.execute("SELECT COUNT(*) FROM ctr WHERE estimate_id=?", (estimate_id,)).fetchone()[0]
+            if not estimate:
+                raise ValueError("No such estimate")
+            if count >= MAX_CTRS:
+                raise ValueError(f"A workbook can have at most {MAX_CTRS} CTRs")
+            values.update({c: estimate[c] for c in SHARED_FIELDS})
         values["prepared_by"] = values["prepared_by"] or user          # whoever starts it, on the day they start it,
         values["ctr_date"] = values["ctr_date"] or date.today().isoformat()   # unless the form says otherwise
         values.update(title=title, scope_intro=DEFAULT_SCOPE_INTRO, assumptions=DEFAULT_ASSUMPTIONS,
                       exclusions=DEFAULT_EXCLUSIONS, basis=DEFAULT_BASIS,
-                      pool1_label=DEFAULT_POOLS[0], pool2_label=DEFAULT_POOLS[1])
+                      pool1_label=DEFAULT_POOLS[0], pool2_label=DEFAULT_POOLS[1], estimate_id=estimate_id)
         stamp = now()
         columns = list(values) + ["created_by", "created_at", "updated_by", "updated_at"]
         params = list(values.values()) + [user, stamp, user, stamp]
@@ -247,7 +334,7 @@ class Repo:
         old = self.get_ctr(ctr_id)
         if not old:
             raise ValueError("No such CTR")
-        new_id = self.create_ctr({"title": f"{old['title']} (copy)"}, user)
+        new_id = self.create_ctr({"title": f"{old['title']} (copy)"}, user, estimate_id=old["estimate_id"])
         data = {c: old[c] for c in SIMPLE_FIELDS}
         data.update(title=f"{old['title']} (copy)", payment_terms=old["payment_terms"], lines=old["lines"],
                     resources=old["resources"], additions=old["additions"])
@@ -258,23 +345,40 @@ class Repo:
         self._audit("ctr_duplicated", old["title"])
         return new_id
 
-    def import_snapshot(self, ctr_id: int, snapshot: Dict, user: str) -> int:
+    def import_snapshot(self, ctr_id: int, snapshot: Dict, user: str, only: Optional[List[str]] = None,
+                        with_resources: bool = False) -> int:
         """Bring the hours by trade of a jobcards snapshot (as the jobcards.hours service gives it) in as scope lines, one per
         trade, each with the trade as its group. Lines from an earlier import are replaced; lines typed by hand stay.
+        With `only` (a list of trades), just those trades are brought in and only their earlier lines are replaced, so other
+        trades imported before are kept. With `with_resources`, each trade that no resource takes yet gets one, named after
+        it and taking all of it (what the editor's "add a resource for each trade" button does), so the hours show at once.
         Returns how many lines were added."""
         if not self.get_ctr(ctr_id):
             raise ValueError("No such CTR")
-        trades = [l for l in snapshot.get("lines", []) if l.get("total")]
+        wanted = None if only is None else list(only)
+        trades = [l for l in snapshot.get("lines", []) if l.get("total") and (wanted is None or l.get("trade") in wanted)]
         if not trades:
-            raise ValueError("That snapshot has no hours in it")
+            raise ValueError("That snapshot has no hours in it" if wanted is None
+                             else f"That snapshot has no {', '.join(wanted)} hours in it")
         label = (snapshot.get("label") or "").strip() or "Snapshot"
         source = f"{snapshot.get('workpack_number', '')} - {label} ({str(snapshot.get('created_at', ''))[:10]})".strip(" -")
         with self._db() as db:
-            db.execute("DELETE FROM ctr_line WHERE ctr_id=? AND from_snapshot=1", (ctr_id,))
+            if wanted is None:
+                db.execute("DELETE FROM ctr_line WHERE ctr_id=? AND from_snapshot=1", (ctr_id,))
+            else:
+                db.executemany("DELETE FROM ctr_line WHERE ctr_id=? AND from_snapshot=1 AND grp=?", [(ctr_id, t) for t in wanted])
             pos = db.execute("SELECT COALESCE(MAX(pos), 0) FROM ctr_line WHERE ctr_id=?", (ctr_id,)).fetchone()[0]
             db.executemany(
                 "INSERT INTO ctr_line (ctr_id,pos,kind,description,grp,eng_override,from_snapshot) VALUES (?,?,'line',?,?,?,1)",
                 [(ctr_id, pos + i, t["trade"], t["trade"], t["total"]) for i, t in enumerate(trades, 1)])
+            if with_resources:
+                taken = {r[0] for r in db.execute("SELECT source FROM ctr_resource WHERE ctr_id=?", (ctr_id,))}
+                at = db.execute("SELECT COALESCE(MAX(pos), 0) FROM ctr_resource WHERE ctr_id=?", (ctr_id,)).fetchone()[0]
+                for t in trades:
+                    if calc.GROUP + t["trade"] not in taken:
+                        at += 1
+                        db.execute("INSERT INTO ctr_resource (ctr_id,pos,name,source,split_pct) VALUES (?,?,?,?,100)",
+                                   (ctr_id, at, t["trade"], calc.GROUP + t["trade"]))
             db.execute("UPDATE ctr SET source_snapshot_id=?, source_text=?, updated_by=?, updated_at=? WHERE id=?",
                        (snapshot.get("id"), source, user, now(), ctr_id))
         self._audit("ctr_hours_imported", f"CTR {ctr_id} from {source}")

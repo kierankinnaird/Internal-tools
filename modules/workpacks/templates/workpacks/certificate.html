@@ -8,6 +8,17 @@
   {% if f.hint %}<div class="hint">{{ f.hint }}</div>{% endif %}
 </div>
 {% endmacro %}
+{# A value cell of the template-shaped form: the engine's hint is the tooltip, a blank falls back to the placeholder. #}
+{% macro control(f, can_edit, placeholder="") %}
+  {% if f.textarea %}<textarea id="f_{{ f.name }}" name="{{ f.name }}" rows="3" title="{{ f.hint }}"{% if placeholder %} placeholder="{{ placeholder }}"{% endif %}{% if not can_edit %} readonly{% endif %}>{{ f.value }}</textarea>
+  {% else %}<input id="f_{{ f.name }}" name="{{ f.name }}" value="{{ f.value }}" title="{{ f.hint }}"{% if placeholder %} placeholder="{{ placeholder }}"{% endif %} autocomplete="off"{% if not can_edit %} readonly{% endif %}>{% endif %}
+{% endmacro %}
+{# A cell the tool fills from the workpack, or by itself; there is nothing to type, so it is only shown. #}
+{% macro shown(c, style="", cls="") %}
+  {% if c.auto %}<div class="tv ro auto {{ cls }}" style="{{ style }}">Filled in by the tool</div>
+  {% elif c.shown %}<div class="tv ro {{ cls }}" style="{{ style }}">{{ c.shown }}</div>
+  {% else %}<div class="tv ro auto {{ cls }}" style="{{ style }}">Not set on the workpack</div>{% endif %}
+{% endmacro %}
 {% block content %}
 <div class="wp">
 <div class="crumbs"><a href="{{ url_for('workpacks.index') }}">Workpacks</a> /
@@ -24,16 +35,59 @@
 
 {% if can_edit %}<form method="post" action="{{ url_for('workpacks.update_certificate', cert_pk=cert.id) }}">{% endif %}
 
-<h2>Certificate</h2>
-<div class="panel"><div class="grid">
-  <div><label for="f_cert_id">Certificate ID</label>
-    <input id="f_cert_id" name="cert_id" value="{{ cert.cert_id }}" required autocomplete="off"{% if not can_edit %} readonly{% endif %}>
-    <div class="hint">A short name, unique in this workpack.</div></div>
-  <div><label for="f_form">Form</label>
-    <input id="f_form" name="form" value="{{ cert.form }}" list="forms" required autocomplete="off"{% if not can_edit %} readonly{% endif %}>
-    <datalist id="forms">{% for f in forms %}<option value="{{ f }}">{% endfor %}</datalist>
-    <div class="hint">Changing the form changes which details appear below once you save.</div></div>
-</div></div>
+<p class="note tplnote">Laid out like the {{ cert.form }} form. White boxes are yours to fill in; a blank one takes the workpack's value.
+  Grey boxes are the form's own labels and values set on <a href="{{ url_for('workpacks.workpack', wp_id=wp.id) }}">the workpack</a>.</p>
+
+{# the page header block of the Word form #}
+<div class="tplhead">
+  <div class="tpl" style="--cols: 1">
+    <div class="tl"><label for="f_hdr_title">Project title</label></div>
+    <div class="tv">{{ control(head.hdr_title, can_edit, wp.title) }}</div>
+    <div class="tl">Project no</div><div class="tv ro">{{ wp.project_no }}</div>
+    <div class="tl">Workpack no</div><div class="tv ro">{{ wp.workpack_no }}</div>
+    <div class="tl">SH1 no</div><div class="tv ro">{{ wp.sh1_no }}</div>
+    <div class="tl"><label for="f_hdr_mc1_no">MC1 no</label></div>
+    <div class="tv">{{ control(head.hdr_mc1_no, can_edit, wp.mc1_no) }}</div>
+  </div>
+  <div class="tpl" style="--cols: 1">
+    <div class="tl formcode">Form {{ cert.form }}</div>
+    <div class="tl"><label for="f_hdr_site">Site</label></div>
+    <div class="tv">{{ control(head.hdr_site, can_edit, wp.site) }}</div>
+  </div>
+</div>
+
+{# the body of the Word form #}
+{% for t in tables %}
+<div class="tpl" style="--cols: {{ t.columns }}">
+  {% for row in t.rows %}{% for c in row %}
+    {% if c.kind == "wide" %}
+      <div class="tl wide"><label{% if c.field %} for="f_{{ c.key }}"{% endif %}>{{ c.label }}</label></div>
+      {% if c.field %}<div class="tv wide">{{ control(c.field, can_edit, c.placeholder) }}</div>{% else %}{{ shown(c, cls="wide") }}{% endif %}
+    {% elif c.kind == "pair" %}
+      <div class="tl" style="grid-column: {{ 2 * c.start + 1 }}"><label{% if c.field %} for="f_{{ c.key }}"{% endif %}>{{ c.label }}</label></div>
+      {% set where = "grid-column: " ~ (2 * c.start + 2) ~ " / span " ~ (2 * c.span - 1) %}
+      {% if c.field %}<div class="tv" style="{{ where }}">{{ control(c.field, can_edit, c.placeholder) }}</div>{% else %}{{ shown(c, where) }}{% endif %}
+    {% else %}
+      <div class="tb" style="grid-column: {{ 2 * c.start + 1 }} / span {{ 2 * c.span }}"></div>
+    {% endif %}
+  {% endfor %}{% endfor %}
+</div>
+{% endfor %}
+
+{% if extra %}
+<div class="tpl" style="--cols: 1">
+  {% for f in extra %}
+    <div class="tl wide"><label for="f_{{ f.name }}">{{ f.label }}</label></div>
+    <div class="tv wide">{{ control(f, can_edit) }}</div>
+  {% endfor %}
+</div>
+{% endif %}
+
+{% if not tables and not extra %}
+<p class="note flat">The {{ cert.form }} form takes no details of its own. Everything it needs comes from the workpack and the header above.</p>
+{% else %}
+<p class="note tplnote">Everything else on the form (results, remarks, signatures) is left as in the blank template.</p>
+{% endif %}
 
 {% if table %}
 <h2>{{ table.title }}</h2>
@@ -41,15 +95,15 @@
   <a class="btn" href="{{ url_for('workpacks.rows', cert_pk=cert.id) }}">{{ 'Edit' if can_edit else 'View' }} {{ table.title|lower }}</a></div>
 {% endif %}
 
-<h2>Details for {{ cert.form }}</h2>
-<div class="panel">
-  {% if sections.details %}<div class="grid">{% for f in sections.details %}{{ field(f, can_edit) }}{% endfor %}</div>
-  {% else %}<p class="note flat">The {{ cert.form }} form takes no details of its own. Everything it needs comes from the workpack and the header details below.</p>{% endif %}
-</div>
-
-<h2>Header and output file</h2>
+<h2>Certificate and output file</h2>
 <div class="panel"><div class="grid">
-  {% for f in sections.header %}{{ field(f, can_edit) }}{% endfor %}
+  <div><label for="f_cert_id">Certificate ID</label>
+    <input id="f_cert_id" name="cert_id" value="{{ cert.cert_id }}" required autocomplete="off"{% if not can_edit %} readonly{% endif %}>
+    <div class="hint">A short name, unique in this workpack.</div></div>
+  <div><label for="f_form">Form</label>
+    <input id="f_form" name="form" value="{{ cert.form }}" list="forms" required autocomplete="off"{% if not can_edit %} readonly{% endif %}>
+    <datalist id="forms">{% for f in forms %}<option value="{{ f }}">{% endfor %}</datalist>
+    <div class="hint">Changing the form changes the layout above once you save.</div></div>
   {% for f in sections.files %}{{ field(f, can_edit) }}{% endfor %}
 </div></div>
 

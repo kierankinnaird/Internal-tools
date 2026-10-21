@@ -63,6 +63,37 @@
 .wp details.more .panel { margin-top: 6px; }
 
 
+/* the certificate laid out like its Word form: grey label cells, white cells to fill in */
+.wp .tplnote { margin: 10px 0; }
+.wp .tpl { display: grid; grid-template-columns: repeat(var(--cols, 2), 140px 1fr); margin-bottom: 14px;
+           border-top: 1px solid var(--ink); border-left: 1px solid var(--ink); background: #fff; }
+.wp .tpl > * { border-right: 1px solid var(--ink); border-bottom: 1px solid var(--ink); min-width: 0; }
+.wp .tl { display: flex; align-items: center; padding: 0 10px; min-height: 40px; background: var(--hover);
+          font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; }
+.wp .tl label { margin: 0; color: inherit; cursor: pointer; }
+.wp .tv { display: flex; min-height: 40px; }
+.wp .tv input, .wp .tv textarea { border: 0; background: transparent; min-height: 40px; }
+.wp .tv input:focus, .wp .tv textarea:focus { outline: 3px solid var(--accent); outline-offset: -3px; background: #fff7f0; }
+.wp .tv input[readonly], .wp .tv textarea[readonly] { background: var(--hover); }
+.wp .tv.ro { align-items: center; padding: 0 10px; overflow-wrap: anywhere; background: var(--hover); }
+.wp .tv.ro.auto { color: var(--muted); font-size: 13px; }
+.wp .tb { background: #fff; }
+.wp .tl.wide, .wp .tv.wide, .wp .tl.formcode { grid-column: 1 / -1; }
+.wp .tl.wide { min-height: 32px; }
+.wp .tl.formcode { min-height: 52px; font-size: 18px; letter-spacing: .08em; }
+.wp .tplhead { display: grid; grid-template-columns: 1fr 320px; gap: 14px; align-items: start; }
+.wp .tplhead .tpl { margin-bottom: 14px; }
+.wp .tplhead .tpl:first-child { grid-template-columns: 140px 1fr; }
+.wp .tplhead .tpl:last-child { grid-template-columns: 90px 1fr; }
+@media (max-width: 760px) {
+  .wp .tplhead { grid-template-columns: 1fr; }
+  .wp .tpl { grid-template-columns: 110px 1fr; }
+  .wp .tpl > * { grid-column: auto !important; }
+  .wp .tpl > .wide, .wp .tpl > .formcode { grid-column: 1 / -1 !important; }
+  .wp .tpl > .tb { display: none; }
+}
+
+
 /* table editor */
 .wp .tablelink { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
 .wp .gridwrap { overflow-x: auto; border: 1px solid var(--ink); background: #fff; }

@@ -1,0 +1,78 @@
+{% extends "base.html" %}
+{% block title %}{{ estimate.title }}{% endblock %}
+{% block head %}<link rel="stylesheet" href="{{ url_for('ctrs.static', filename='ctrs.css') }}">{% endblock %}
+{% block content %}
+<div class="ctr">
+<div class="crumbs"><a href="{{ url_for('ctrs.index') }}">CTRs</a> / {{ estimate.title }}</div>
+<h1>{{ estimate.title }}</h1>
+<p class="lede">One workbook: a Summary sheet, then a sheet for each CTR below, in this order. The summary's hours and cost are taken from the CTR sheets, so they always agree.</p>
+{% if error %}<div class="error" role="alert">{{ error }}</div>{% endif %}
+{% if saved %}<div class="notice" role="status">Saved. The project details are now the same on every CTR sheet.</div>{% endif %}
+{% if hours %}<div class="notice" role="status">Hours brought in from the jobcards on {{ hours }} sheet{{ '' if hours == 1 else 's' }}. Now say who does that work, in each sheet's Resources table.</div>{% endif %}
+
+<h2>CTR sheets</h2>
+{% if estimate.ctrs %}
+<table>
+  <thead><tr><th>Sheet</th><th>CTR no.</th><th class="num">Hours</th><th class="num">Cost</th><th>Last changed</th></tr></thead>
+  <tbody>{% for c in estimate.ctrs %}
+    <tr><td><a href="{{ url_for('ctrs.editor', ctr_id=c.id) }}"><b>{{ c.title }}</b></a></td><td>{{ c.ctr_no }}</td>
+        <td class="num">{{ c.hours|ctr_hours }}</td><td class="num">{{ c.cost|ctr_gbp }}</td><td>{{ c.updated_at[:10] }} · {{ c.updated_by }}</td></tr>
+  {% endfor %}</tbody>
+  <tfoot><tr class="total"><td colspan="2">Total</td><td class="num">{{ estimate.hours|ctr_hours }}</td><td class="num">{{ estimate.cost|ctr_gbp }}</td><td></td></tr></tfoot>
+</table>
+{% else %}<div class="empty">No CTR sheets yet. Add the first one below.</div>{% endif %}
+
+{% if can_edit %}
+<form method="post" action="{{ url_for('ctrs.add_ctr', estimate_id=estimate.id) }}" class="row">
+  <div style="flex:2 1 260px"><label for="new-title">Add a CTR sheet</label>
+    <input id="new-title" name="title" list="discipline-names" placeholder="e.g. Piping" required>
+    <datalist id="discipline-names">{% for d in disciplines %}<option value="{{ d }}">{% endfor %}</datalist></div>
+  <div><label for="new-no">CTR no. (optional)</label><input id="new-no" name="ctr_no"></div>
+  <div class="shrink"><button class="btn" type="submit">Add sheet</button></div>
+</form>
+{% endif %}
+
+<p class="actions">
+  {% if estimate.ctrs %}<a class="btn primary" href="{{ url_for('ctrs.export_workbook', estimate_id=estimate.id) }}" id="download">Download workbook (Excel)</a>{% endif %}
+</p>
+
+{% if workpacks is not none %}
+<h2>Hours from the jobcards</h2>
+<p class="note">Link the workbook to a jobcards workpack and the sheets below take their trades' hours from the newest snapshot of it, by themselves: {% for d, t in auto.items() %}<b>{{ d }}</b> takes {{ t|join(', ') }} hours{% if not loop.last %}; {% endif %}{% endfor %}. Any other trade can be added to a sheet by hand, from the sheet's own page.</p>
+{% set numbers = workpacks|map(attribute='number')|list %}
+{% if can_edit %}
+<div class="row">
+  <form method="post" action="{{ url_for('ctrs.save_estimate', estimate_id=estimate.id) }}" class="row" style="margin:0;flex:2 1 420px">
+    <div style="flex:2 1 280px"><label for="jobcards_workpack">Jobcards workpack</label>
+      <select id="jobcards_workpack" name="jobcards_workpack"><option value="">None</option>
+        {% for w in workpacks %}<option value="{{ w.number }}" {% if w.number == estimate.jobcards_workpack %}selected{% endif %}>{{ w.number }} — {{ w.title }}</option>{% endfor %}
+        {% if estimate.jobcards_workpack and estimate.jobcards_workpack not in numbers %}<option value="{{ estimate.jobcards_workpack }}" selected>{{ estimate.jobcards_workpack }} (no snapshot yet)</option>{% endif %}
+      </select></div>
+    <div class="shrink"><button class="btn dark" type="submit">Use this workpack</button></div>
+  </form>
+  {% if estimate.jobcards_workpack %}
+  <form method="post" action="{{ url_for('ctrs.update_hours', estimate_id=estimate.id) }}" class="shrink">
+    <button class="btn" type="submit" title="Bring in the newest snapshot's hours again">Update hours from jobcards</button></form>
+  {% endif %}
+</div>
+{% elif estimate.jobcards_workpack %}<p>Hours come from jobcards workpack <b>{{ estimate.jobcards_workpack }}</b>.</p>{% endif %}
+{% endif %}
+
+<h2>Project details</h2>
+<p class="note">Held once for the whole workbook and shown on every CTR sheet.</p>
+{% if can_edit %}<form method="post" action="{{ url_for('ctrs.save_estimate', estimate_id=estimate.id) }}">{% endif %}
+<div class="grid">
+  {% for key, label in fields %}
+  <div><label for="e-{{ key }}">{{ label }}</label><input id="e-{{ key }}" name="{{ key }}" value="{{ estimate[key] }}" {% if key == 'title' %}required{% endif %} {% if not can_edit %}readonly{% endif %}></div>
+  {% endfor %}
+</div>
+{% if can_edit %}<p class="actions"><button class="btn dark" type="submit">Save project details</button></p></form>{% endif %}
+
+{% if can_edit %}
+<div class="more">
+  <form method="post" action="{{ url_for('ctrs.delete_estimate', estimate_id=estimate.id) }}" class="inline"
+        onsubmit="return confirm('Delete this workbook and all of its CTRs?')"><button class="btn danger" type="submit">Delete this workbook</button></form>
+</div>
+{% endif %}
+</div>
+{% endblock %}

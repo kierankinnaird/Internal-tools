@@ -22,10 +22,19 @@ def app(tmp_path):
     return create_app(tmp_path, "tester")
 
 
+def new_ctr(client, title="Construction - Piping", ctr_no="CTR-014", workbook="Beryl Bravo diesel mods", **details):
+    """A new workbook with one CTR in it; returns the CTR's id. (The first workbook is 1 and its first CTR is 1.)"""
+    r = client.post("/ctrs/", data={"title": workbook, **details})
+    assert r.status_code == 302 and "/ctrs/estimates/" in r.headers["Location"]
+    r = client.post(r.headers["Location"].rsplit("?", 1)[0] + "/ctrs", data={"title": title, "ctr_no": ctr_no})
+    assert r.status_code == 302
+    return int(r.headers["Location"].rsplit("/", 1)[1])
+
+
 @pytest.fixture
 def c(app):
     client = app.test_client()
-    assert client.post("/ctrs/", data={"title": "Construction - Piping", "ctr_no": "CTR-014"}).status_code == 302
+    assert new_ctr(client) == 1
     return client
 
 
@@ -51,28 +60,83 @@ def test_the_menu_has_ctrs_after_the_other_modules(app):
     assert [n["label"] for n in app.config["NAV"]][-1] == "CTRs"
 
 
-def test_the_list_starts_empty_and_creating_one_opens_its_editor(app):
+def test_the_list_starts_empty_and_creating_a_workbook_opens_its_page(app):
     c = app.test_client()
     page = c.get("/ctrs/")
-    assert page.status_code == 200 and b"No CTRs yet" in page.data
-    r = c.post("/ctrs/", data={"title": "Piping", "client": "Apache", "project_name": "BB"})
-    assert r.status_code == 302 and r.headers["Location"].endswith("/ctrs/1")
+    assert page.status_code == 200 and b"No workbooks yet" in page.data
+    r = c.post("/ctrs/", data={"title": "Beryl Bravo", "client": "Apache", "project_name": "BB"})
+    assert r.status_code == 302 and r.headers["Location"].endswith("/ctrs/estimates/1")
     listed = c.get("/ctrs/").data.decode()
-    assert "Piping" in listed and "Apache" in listed and "No CTRs yet" not in listed
+    assert "Beryl Bravo" in listed and "Apache" in listed and "No workbooks yet" not in listed
+    assert b"No CTR sheets yet" in c.get("/ctrs/estimates/1").data
 
 
-def test_a_ctr_without_a_title_is_refused_with_a_message(app):
+def test_ticking_disciplines_starts_the_workbook_with_a_sheet_for_each(app):
+    c = app.test_client()
+    r = c.post("/ctrs/", data={"title": "BB", "client": "Apache", "disciplines": ["Piping", "Mechanical", "Process"]})
+    page = c.get(r.headers["Location"]).data.decode()
+    assert page.index("Process") < page.index("Piping") < page.index("Mechanical")        # the usual order, not the order ticked
+    assert page.count('/ctrs/1"') == 1 and page.count('/ctrs/2"') == 1 and page.count('/ctrs/3"') == 1
+    assert "Apache" in c.get("/ctrs/1").data.decode()                                     # each sheet has the project details
+
+
+def test_an_unknown_discipline_is_refused_and_nothing_is_made(app):
+    c = app.test_client()
+    r = c.post("/ctrs/", data={"title": "BB", "disciplines": ["Piping", "Basket weaving"]})
+    assert "error=" in r.headers["Location"] and b"Unknown discipline" in c.get(r.headers["Location"]).data
+    assert b"No workbooks yet" in c.get("/ctrs/").data
+
+
+def test_a_workbook_without_a_name_is_refused_with_a_message(app):
     c = app.test_client()
     r = c.post("/ctrs/", data={"title": "  "})
     assert r.status_code == 302 and "error=" in r.headers["Location"]
+    assert b"Estimate name is required" in c.get(r.headers["Location"]).data
+    assert b"No workbooks yet" in c.get("/ctrs/").data
+
+
+def test_a_ctr_without_a_title_is_refused_with_a_message(c):
+    r = c.post("/ctrs/estimates/1/ctrs", data={"title": " "})
+    assert r.status_code == 302 and "error=" in r.headers["Location"]
     assert b"CTR title is required" in c.get(r.headers["Location"]).data
-    assert b"No CTRs yet" in c.get("/ctrs/").data
 
 
-def test_the_list_shows_each_ctrs_hours_and_cost(c):
+def test_the_lists_show_hours_and_cost_for_each_ctr_and_the_whole_workbook(c):
     save(c)
-    row = c.get("/ctrs/").data.decode()
-    assert "137" in row and f"£{82 * 55.5 + 55 * 48 + 300:,.2f}" in row
+    cost = f"£{82 * 55.5 + 55 * 48 + 300:,.2f}"
+    for url in ("/ctrs/", "/ctrs/estimates/1"):
+        page = c.get(url).data.decode()
+        assert "137" in page and cost in page, url
+
+
+def test_a_workbook_page_has_its_sheets_in_order_and_the_totals(c):
+    save(c)
+    new_ctr_in_same_workbook = c.post("/ctrs/estimates/1/ctrs", data={"title": "Mechanical"})
+    assert new_ctr_in_same_workbook.headers["Location"].endswith("/ctrs/2")
+    page = c.get("/ctrs/estimates/1").data.decode()
+    assert page.index("Construction - Piping") < page.index("Mechanical")
+    assert 'href="/ctrs/estimates/1/export.xlsx"' in page and "Download workbook" in page
+    assert c.get("/ctrs/estimates/99").status_code == 404 and c.post("/ctrs/estimates/99/ctrs", data={"title": "x"}).status_code == 404
+
+
+def test_the_project_details_are_kept_once_and_copied_to_every_sheet(c):
+    c.post("/ctrs/estimates/1/ctrs", data={"title": "Mechanical"})
+    r = c.post("/ctrs/estimates/1", data={"title": "BB diesel", "client": "Apache", "project_name": "Beryl Bravo",
+                                          "project_title": "Diesel mods", "framework_ref": "FA-9"})
+    assert r.headers["Location"].endswith("/ctrs/estimates/1?saved=1")
+    for pk in (1, 2):
+        page = c.get(f"/ctrs/{pk}").data.decode()
+        assert 'value="Apache"' in page and 'value="Beryl Bravo"' in page and 'value="FA-9"' in page
+        assert 'data-field="client"' not in page and 'data-field="project_name"' not in page      # changed on the workbook, not here
+    assert "BB diesel" in c.get("/ctrs/1").data.decode()                                         # the breadcrumb
+    assert b"Estimate name is required" in c.get(c.post("/ctrs/estimates/1", data={"title": " "}).headers["Location"]).data
+
+
+def test_deleting_a_workbook_deletes_its_sheets(c):
+    c.post("/ctrs/estimates/1/ctrs", data={"title": "Mechanical"})
+    r = c.post("/ctrs/estimates/1/delete")
+    assert r.status_code == 302 and c.get("/ctrs/1").status_code == 404 and c.get("/ctrs/2").status_code == 404
+    assert c.get("/ctrs/estimates/1").status_code == 404 and b"No workbooks yet" in c.get("/ctrs/").data
 
 
 # ---- the editor -----------------------------------------------------------------------------------------------
@@ -234,7 +298,7 @@ def test_a_snapshot_with_no_hours_is_refused(app, c):
 def test_without_the_jobcards_module_the_ctr_module_still_works_and_offers_no_import(tmp_path):
     app = create_app(tmp_path, "tester", modules=["ctrs"])
     c = app.test_client()
-    assert c.post("/ctrs/", data={"title": "Alone"}).status_code == 302
+    assert new_ctr(c, "Alone") == 1
     page = c.get("/ctrs/1").data.decode()
     assert page.count("Hours from the jobcards") == 0 and "import-form" not in page and "snapshot_id" not in page
     assert save(c, {"title": "Alone", "lines": [{"description": "x", "eng_override": "5"}]}).status_code == 200
@@ -252,9 +316,9 @@ def test_duplicate_makes_a_copy_and_opens_it(c):
     assert c.post("/ctrs/99/duplicate").status_code == 404
 
 
-def test_delete_removes_the_ctr(c):
+def test_delete_removes_the_ctr_and_goes_back_to_its_workbook(c):
     r = c.post("/ctrs/1/delete")
-    assert r.status_code == 302 and c.get("/ctrs/1").status_code == 404
+    assert r.status_code == 302 and r.headers["Location"].endswith("/ctrs/estimates/1") and c.get("/ctrs/1").status_code == 404
     assert c.post("/ctrs/1/delete").status_code == 404
 
 
@@ -335,11 +399,15 @@ def test_changes_are_written_to_the_audit_log(app, c, tmp_path):
     c.get("/ctrs/1/export.xlsx")
     c.post("/ctrs/1/duplicate")
     c.post("/ctrs/2/delete")
+    c.get("/ctrs/estimates/1/export.xlsx")
+    c.post("/ctrs/estimates/1", data={"title": "Renamed", "client": "Apache"})
+    c.post("/ctrs/estimates/1/delete")
     with sqlite3.connect(tmp_path / "audit.sqlite") as db:
         rows = db.execute("SELECT user, action, detail FROM audit WHERE module='ctrs' ORDER BY id").fetchall()
-    assert [r[1] for r in rows] == ["ctr_created", "ctr_saved", "ctr_downloaded", "ctr_created", "ctr_saved", "ctr_duplicated",
-                                    "ctr_deleted"]
+    assert [r[1] for r in rows] == ["estimate_created", "ctr_created", "ctr_saved", "ctr_downloaded", "ctr_created", "ctr_saved",
+                                    "ctr_duplicated", "ctr_deleted", "estimate_downloaded", "estimate_saved", "estimate_deleted"]
     assert {r[0] for r in rows} == {"tester"} and ("tester", "ctr_downloaded", "Construction - Piping") in rows
+    assert ("tester", "estimate_downloaded", "Beryl Bravo diesel mods") in rows and ("tester", "estimate_deleted", "Renamed") in rows
 
 
 def test_a_preview_is_not_audited(c, tmp_path):
@@ -398,7 +466,7 @@ def test_the_preview_says_how_far_along_the_ctr_is_and_the_split_totals(c):
 def test_a_new_ctr_comes_with_who_made_it_and_the_date(app):
     from datetime import date
     c = app.test_client()
-    c.post("/ctrs/", data={"title": "Fresh"})
+    new_ctr(c, "Fresh")
     page = c.get("/ctrs/1").data.decode()
     assert 'data-field="prepared_by" ' in page and 'value="tester"' in page and f'value="{date.today().isoformat()}"' in page
 

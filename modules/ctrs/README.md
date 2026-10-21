@@ -1,6 +1,27 @@
 # CTRs
 
-Cost engineers draw up a CTR here and download it as an Excel sheet laid out like the company's CTR sheets.
+Cost engineers draw up the CTRs for a job here and download them as one Excel workbook, a sheet per CTR laid out like
+the company's CTR sheets, with a Summary sheet in front.
+
+**Workbooks (estimates).** A workbook is the unit: it holds the project details once (client, project name and title,
+framework ref) and the CTRs for the job. Starting one, you can tick the usual disciplines (Process, Piping, Instrument,
+Electrical, Structural, Mechanical, Tech Safety, Construction, Surveys, Project Engineering) and get a CTR sheet for each;
+more can be added, renamed, duplicated or deleted afterwards. The project details are copied onto every CTR in the
+workbook when saved, so the sheets agree, and are changed on the workbook's page, not in a CTR. The workbook's Excel file
+(`export.write_workbook`) is a Summary sheet (project details, then each CTR's hours and cost, and the totals) followed by
+one sheet per CTR in creation order. The Summary's figures are formulas pointing at each CTR sheet's own total cells, which
+the exporter writes, so a link cannot be left pointing nowhere. A single CTR can still be downloaded on its own.
+**Hours from the jobcards, automatically.** A workbook can be linked to a jobcards workpack (only workpacks that have a
+snapshot are offered). A sheet whose title is a discipline in `constants.DISCIPLINE_TRADES` (today, Piping, which takes
+`P/Fitter`) then takes just those trades' hours from the newest snapshot of that workpack, when the workbook is made, when
+such a sheet is added, when the workpack is first chosen, and whenever "Update hours from jobcards" is pressed. Each such
+trade gets a resource named after it taking all of it, so the hours count at once and only the rate is left to type.
+Updating replaces only those trades' earlier imported lines; other trades brought in by hand, typed lines and existing
+resources are kept. The link is the workbook's `jobcards_workpack` (migration 0003). The jobcards module is reached only
+through the `jobcards.hours` service, so everything here is skipped when it is not installed.
+
+Not built yet: the phase-by-discipline roll-up with growth % that the company's Front Sheet has, and the non-labour pages.
+Table `estimate` (migration 0002; CTRs that existed before it were gathered into a workbook per set of project details).
 
 **What a CTR holds**
 - Header (project, client, CTR no., prepared / checked / approved), objectives, input requirements.

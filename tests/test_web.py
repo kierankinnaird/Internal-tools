@@ -36,3 +36,12 @@ def test_copy_is_audited_only_for_real_keys(client):
     assert c.post("/norms/api/copied", json={"key": "nonsense"}).status_code == 204
     rows = sqlite3.connect(tmp / "audit.sqlite").execute("SELECT user, module, action, detail FROM audit").fetchall()
     assert rows == [("tester", "norms", "key_copied", "1-1-01-00-01")]
+
+def test_the_app_font_is_the_bundled_montserrat_with_a_fallback_and_controls_follow_it(client):
+    c, _ = client
+    css = c.get("/static/host.css").get_data(as_text=True)
+    assert '--sans: "Montserrat", "Segoe UI"' in css and "font: 15px/1.45 var(--sans)" in css
+    assert "button, input, select, textarea { font-family: inherit; }" in css
+    font = c.get("/static/fonts/montserrat-latin-wght.woff2")                 # served from the app, so no internet is needed
+    assert "fonts/montserrat-latin-wght.woff2" in css and font.status_code == 200 and font.data[:4] == b"wOF2"
+    assert b"SIL OPEN FONT LICENSE" in c.get("/static/fonts/Montserrat-OFL.txt").data.upper()

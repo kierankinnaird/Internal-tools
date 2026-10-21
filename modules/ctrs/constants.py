@@ -21,6 +21,19 @@ FIELD_LABELS.update(objectives="Objectives", inputs="Input requirements", scope_
                     expenses="Expenses", basis="Basis of proposal", pool1_label="First hours column",
                     pool2_label="Second hours column")
 
+# What a workbook (an estimate) holds once for all of its CTRs: (column, label). The last four are shown on every CTR
+# sheet and kept the same on all of them.
+ESTIMATE_FIELDS = [("title", "Estimate name"), ("client", "Client"), ("project_name", "Project name"),
+                   ("project_title", "Project title"), ("framework_ref", "Framework agreement ref")]
+SHARED_FIELDS = ["client", "project_name", "project_title", "framework_ref"]
+# The CTRs the company's cost workbook usually holds, one sheet each; offered when an estimate is started.
+DISCIPLINES = ["Process", "Piping", "Instrument", "Electrical", "Structural", "Mechanical", "Tech Safety",
+               "Construction", "Surveys", "Project Engineering"]
+
+# The jobcard trades a discipline's CTR takes its hours from, automatically, when its workbook is linked to a jobcards
+# workpack. A CTR is matched by its title being the discipline's name. Other trades can always be brought in by hand.
+DISCIPLINE_TRADES = {"Piping": ["P/Fitter"]}
+
 # What a new CTR starts with. All of it can be changed or removed.
 DEFAULT_SCOPE_INTRO = "This CTR covers the following key deliverables / activities:"
 DEFAULT_ASSUMPTIONS = "This CTR assumes the following:\n- "
@@ -34,3 +47,4 @@ MAX_LINES = 400
 MAX_RESOURCES = 60
 MAX_ADDITIONS = 30
 MAX_TEXT = 20000
+MAX_CTRS = 60                   # in one workbook

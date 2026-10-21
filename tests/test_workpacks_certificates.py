@@ -54,18 +54,81 @@ def test_hints_come_from_the_engine():
     assert all(isinstance(certfields.hint(c), str) for c in CERTIFICATE_COLUMNS)
 
 
+# ---- the template-shaped layout ----------------------------------------------------------------
+def keys(form):
+    return [[c.get("key", "_") for c in row] for t in certfields.layout(form) for row in t["rows"]]
+
+
+def test_the_layout_puts_each_field_where_the_template_has_it():
+    assert keys("AS1") == [["equipment", "location"], ["area", "system"], ["drawing", "subsystem"], ["scope"]]
+    cells = certfields.layout("AS1")[0]["rows"]
+    assert cells[3][0]["kind"] == "wide" and (cells[0][1]["start"], cells[0][1]["span"]) == (1, 1)
+    assert keys("JI1") == [["location", "system", "subsystem"]] and certfields.layout("JI1")[0]["columns"] == 3
+
+
+def test_a_lone_cell_fills_the_row_or_sits_in_the_right_half_as_the_template_does():
+    sl1 = certfields.layout("SL1")[0]["rows"]
+    assert keys("SL1") == [["equipment", "location"], ["_", "system"], ["sl1a"]]       # SYSTEM sits right, JI1 REF is left
+    assert (sl1[1][0]["kind"], sl1[1][0]["start"], sl1[1][0]["span"]) == ("blank", 0, 1)
+    assert (sl1[2][0]["start"], sl1[2][0]["span"]) == (0, 2)
+    assert keys("EE12")[2] == ["_", "subsystem"]
+
+
+def test_the_layout_shows_exactly_the_slots_the_engine_fills():
+    for form in list(F.BODY_FIELDS) + ["PL1 A", "TR7", "DM"]:
+        wanted = {slot[0] for slot in [*F.BODY_FIELDS.get(form, []), *F.BODY_REPLACE.get(form, [])]}
+        assert certfields.placed(form) == wanted, form
+    assert certfields.layout("TR7") == [] and certfields.layout("DM") == []
+
+
+def test_fields_the_template_body_has_no_cell_for_are_listed_after_the_layout():
+    assert certfields.unplaced("AS1") == [] and certfields.unplaced("EE12") == ["ee12_description"]
+    assert certfields.unplaced("PL1 A") == ["punch_no", "discipline"]
+
+
 # ---- the page ----------------------------------------------------------------------------------
 def test_the_page_shows_the_fields_for_the_form_and_keeps_the_rest_apart(client):
     c, _, _ = client
     html = c.get("/workpacks/certificates/1").get_data(as_text=True)         # AS1
-    assert "<h1>AS1 AS1-1</h1>" in html and "Details for AS1" in html
+    assert "<h1>AS1 AS1-1</h1>" in html and "Form AS1" in html
     assert html.index('name="area"') < html.index("Other fields") < html.index('name="sl1a"')
     html = c.get("/workpacks/certificates/2").get_data(as_text=True)         # SL1
     assert html.index('name="sl1a"') < html.index("Other fields") < html.index('name="area"')
-    html = c.get("/workpacks/certificates/3").get_data(as_text=True)         # SH1
+    c.post("/workpacks/1/certificates", data={"cert_id": "TR7-1", "form": "TR7"})        # a form with no fields of its own
+    html = c.get("/workpacks/certificates/4").get_data(as_text=True)
     assert "takes no details of its own" in html and 'name="hdr_title"' in html and 'name="filename"' in html
-    for column in CERTIFICATE_COLUMNS:
-        assert html.count(f'name="{column}"') == 1
+    for pk in (1, 2, 3, 4):                                                  # every field is on the page exactly once
+        html = c.get(f"/workpacks/certificates/{pk}").get_data(as_text=True)
+        for column in CERTIFICATE_COLUMNS:
+            assert html.count(f'name="{column}"') == 1, (pk, column)
+
+
+def test_the_page_follows_the_templates_order(client):
+    c, _, _ = client
+    html = c.get("/workpacks/certificates/1").get_data(as_text=True)         # AS1: EQUIPMENT LOCATION / AREA SYSTEM / ...
+    order = [html.index(f'for="f_{n}"') for n in ("equipment", "location", "area", "system", "drawing", "subsystem", "scope")]
+    assert order == sorted(order)
+    assert html.index('for="f_hdr_title"') < order[0] < html.index("Certificate and output file")
+
+
+def test_blank_boxes_show_the_workpack_value_they_fall_back_to(client):
+    c, _, _ = client
+    c.post("/workpacks/1", data={"title": "Wellbay 18 clearance", "location": "Deck 2", "system": "Diesel", "site": "Beryl B",
+                                 "project_no": "FCP-9", "workpack_no": "WP-77", "sh1_no": "SH1-5", "mc1_no": "MC1-3"})
+    html = c.get("/workpacks/certificates/1").get_data(as_text=True)
+    assert 'placeholder="Deck 2"' in html and 'placeholder="Diesel"' in html                    # location, system
+    assert 'placeholder="Wellbay 18 clearance"' in html and 'placeholder="Beryl B"' in html       # header title, site
+    assert 'placeholder="MC1-3"' in html
+    for shown in ("FCP-9", "WP-77", "SH1-5"):                                                   # not editable here
+        assert f">{shown}</div>" in html and f'value="{shown}"' not in html
+
+
+def test_project_level_cells_are_shown_but_not_editable(client):
+    c, _, _ = client
+    c.post("/workpacks/1", data={"title": "T", "handover_title": "Whole skid", "handover_includes": "Pumps"})
+    html = c.get("/workpacks/certificates/3").get_data(as_text=True)         # SH1
+    assert ">Whole skid</div>" in html and ">Pumps</div>" in html and "Filled in by the tool" in html
+    assert 'name="handover_title"' not in html
 
 
 def test_the_engines_hints_are_shown(client):
@@ -107,7 +170,7 @@ def test_changing_the_form_changes_the_sections_and_keeps_the_values(client):
     c.post("/workpacks/certificates/1", data={"form": "AS1", "area": "Deck", "scope": "Check"})
     c.post("/workpacks/certificates/1", data={"form": "sl1", "area": "Deck", "scope": "Check"})
     html = c.get("/workpacks/certificates/1").get_data(as_text=True)
-    assert "Details for SL1" in html and html.index('name="sl1a"') < html.index("Other fields") < html.index('name="area"')
+    assert "Form SL1" in html and html.index('name="sl1a"') < html.index("Other fields") < html.index('name="area"')
     assert row(tmp, 1)["area"] == "Deck" and row(tmp, 1)["scope"] == "Check"
 
 

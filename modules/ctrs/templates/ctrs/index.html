@@ -4,34 +4,48 @@
 {% block content %}
 <div class="ctr">
 <h1>CTRs</h1>
-<p class="lede">A CTR sets out the scope, hours and cost of a piece of work. Hours can come from a jobcards snapshot, shared between resources by the percentages you type, and the finished CTR downloads as an Excel sheet in the usual layout.</p>
+<p class="lede">A workbook holds the CTRs for one job, one sheet each (Piping, Mechanical, Construction and so on), with a summary sheet in front. Hours can come from a jobcards snapshot, shared between resources by the percentages you type, and the whole workbook downloads as one Excel file.</p>
 {% if error %}<div class="error" role="alert">{{ error }}</div>{% endif %}
 {% if can_edit %}
-<details class="new" {% if not ctrs %}open{% endif %}>
-  <summary>New CTR</summary>
+<details class="new" {% if not estimates %}open{% endif %}>
+  <summary>New workbook</summary>
   <form method="post" action="{{ url_for('ctrs.create') }}">
     <div class="row">
-      <div style="flex:2 1 280px"><label for="title">CTR title</label><input id="title" name="title" required></div>
-      <div><label for="ctr_no">CTR no.</label><input id="ctr_no" name="ctr_no"></div>
+      <div style="flex:2 1 280px"><label for="title">Workbook name</label><input id="title" name="title" required></div>
       <div><label for="client">Client</label><input id="client" name="client"></div>
     </div>
     <div class="row">
       <div><label for="project_name">Project name</label><input id="project_name" name="project_name"></div>
       <div><label for="project_title">Project title</label><input id="project_title" name="project_title"></div>
     </div>
-    <button class="btn primary" type="submit">Create CTR</button>
+    {% if workpacks is not none %}
+    <div class="row">
+      <div><label for="jobcards_workpack">Hours from jobcards workpack (optional)</label>
+        <select id="jobcards_workpack" name="jobcards_workpack"><option value="">None</option>
+          {% for w in workpacks %}<option value="{{ w.number }}">{{ w.number }} — {{ w.title }}</option>{% endfor %}</select>
+        <p class="note">{% for d, t in auto.items() %}{{ d }} sheets take their {{ t|join(', ') }} hours from the newest snapshot of it automatically. {% endfor %}A workpack is listed once a snapshot of it has been taken in Jobcards.</p></div>
+    </div>
+    {% endif %}
+    <fieldset class="picks">
+      <legend>Start with a CTR sheet for</legend>
+      <div class="checks-grid">{% for d in disciplines %}
+        <label class="pick"><input type="checkbox" name="disciplines" value="{{ d }}"> {{ d }}</label>{% endfor %}
+      </div>
+      <p class="note">Tick the ones this job needs. You can add, rename or delete sheets afterwards.</p>
+    </fieldset>
+    <button class="btn primary" type="submit">Create workbook</button>
   </form>
 </details>
 {% endif %}
-{% if ctrs %}
+{% if estimates %}
 <table>
-  <thead><tr><th>CTR</th><th>No.</th><th>Client</th><th>Project</th><th class="num">Hours</th><th class="num">Cost</th><th>Last changed</th></tr></thead>
-  <tbody>{% for c in ctrs %}
-    <tr><td><a href="{{ url_for('ctrs.editor', ctr_id=c.id) }}"><b>{{ c.title }}</b></a></td><td>{{ c.ctr_no }}</td><td>{{ c.client }}</td>
-        <td>{{ c.project_title or c.project_name }}</td><td class="num">{{ c.hours|ctr_hours }}</td><td class="num">{{ c.cost|ctr_gbp }}</td>
-        <td>{{ c.updated_at[:10] }} · {{ c.updated_by }}</td></tr>
+  <thead><tr><th>Workbook</th><th>Client</th><th>Project</th><th class="num">CTRs</th><th class="num">Hours</th><th class="num">Cost</th><th>Last changed</th></tr></thead>
+  <tbody>{% for e in estimates %}
+    <tr><td><a href="{{ url_for('ctrs.estimate', estimate_id=e.id) }}"><b>{{ e.title }}</b></a></td><td>{{ e.client }}</td>
+        <td>{{ e.project_title or e.project_name }}</td><td class="num">{{ e.ctrs|length }}</td><td class="num">{{ e.hours|ctr_hours }}</td>
+        <td class="num">{{ e.cost|ctr_gbp }}</td><td>{{ e.updated_at[:10] }} · {{ e.updated_by }}</td></tr>
   {% endfor %}</tbody>
 </table>
-{% else %}<div class="empty">No CTRs yet. Create the first one above.</div>{% endif %}
+{% else %}<div class="empty">No workbooks yet. Create the first one above.</div>{% endif %}
 </div>
 {% endblock %}

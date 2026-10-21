@@ -128,8 +128,9 @@ def test_a_whole_ctr_session_leaves_nothing_open(tmp_path, watched):
     c.post("/jobcards/cards/1/save", json={"title": "J", "trade": "Welder", "tasks": [
         {"description": "Weld", "qty": 4, "norm_hours": 2.5, "basis": "q"}]})
     c.post("/jobcards/workpacks/1/snapshots", data={"label": "rev A"})
-    assert c.post("/ctrs/", data={"title": "Piping", "ctr_no": "C1"}).status_code == 302
-    c.get("/ctrs/"); c.get("/ctrs/1"); c.get("/ctrs/static/ctrs.js")
+    assert c.post("/ctrs/", data={"title": "Beryl Bravo"}).status_code == 302
+    assert c.post("/ctrs/estimates/1/ctrs", data={"title": "Piping", "ctr_no": "C1"}).status_code == 302
+    c.get("/ctrs/"); c.get("/ctrs/estimates/1"); c.get("/ctrs/1"); c.get("/ctrs/static/ctrs.js")
     assert c.post("/ctrs/1/import-hours", data={"snapshot_id": "1"}).status_code == 302
     c.post("/ctrs/1/save", json={"title": "Piping", "resources": [{"name": "A", "source": "group:Welder", "split_pct": "60", "rate": "5"}]})
     c.post("/ctrs/1/preview", json={"lines": [{"qty": "x"}]})                       # refused: a mistake in what was typed
@@ -138,6 +139,9 @@ def test_a_whole_ctr_session_leaves_nothing_open(tmp_path, watched):
     assert c.get("/ctrs/1/export.xlsx").status_code == 200
     c.post("/ctrs/1/duplicate")
     c.post("/ctrs/2/delete")
+    assert c.get("/ctrs/estimates/1/export.xlsx").status_code == 200                # the whole workbook
+    c.post("/ctrs/estimates/1", data={"title": "Beryl Bravo 2", "client": "Apache"})
+    c.post("/ctrs/estimates/1/delete")
     assert c.get("/ctrs/99").status_code == 404 and c.post("/ctrs/99/save", json={}).status_code == 404
     service = app.config["CTX"].services.get("jobcards.hours")
     service.snapshots(); service.snapshot(1)
